@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:5174 ws://127.0.0.1:5174 https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com; frame-src 'self' https://*.firebaseapp.com; worker-src 'self' blob:"
+    />
+    
+    <!-- PWA Configuration -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#087B3B" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Almacén ARLES" />
+    
+    <title>Arles S.A.S. Panel de Almacen</title>
+    <style>
+      #root:empty { min-height: 100vh; }
+      .html-startup-fallback { box-sizing: border-box; min-height: 100vh; display: grid; place-items: center; padding: 2rem; background: #edf4ed; color: #17351f; font: 16px/1.5 system-ui, sans-serif; text-align: center; }
+      .html-startup-fallback strong { display: block; margin-bottom: .5rem; font-size: 1.25rem; }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div class="html-startup-fallback"><div><strong>Iniciando Gestión de Almacén</strong><span>Si esta pantalla permanece visible, revisa la configuración o recarga el programa.</span></div></div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

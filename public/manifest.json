@@ -1,0 +1,90 @@
+{
+  "name": "Gestión de Almacén ARLES",
+  "short_name": "Almacén ARLES",
+  "description": "Panel web de gestión de almacén para productos de aseo y herramientas",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#087B3B",
+  "background_color": "#FFFFFF",
+  "icons": [
+    {
+      "src": "/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/app-icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-540x720.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshot-1280x720.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Inventario",
+      "short_name": "Inventario",
+      "description": "Ver inventario actual",
+      "url": "/?tab=inventory",
+      "icons": [
+        {
+          "src": "/shortcut-inventory-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Nueva Entrada",
+      "short_name": "Entrada",
+      "description": "Registrar entrada de productos",
+      "url": "/?tab=entry",
+      "icons": [
+        {
+          "src": "/shortcut-entry-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Nueva Salida",
+      "short_name": "Salida",
+      "description": "Registrar salida de productos",
+      "url": "/?tab=exit",
+      "icons": [
+        {
+          "src": "/shortcut-exit-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Consumibles">
+  <rect width="64" height="64" rx="14" fill="#087b3b"/>
+  <path d="M16 24 32 14l16 10v18L32 50 16 40V24Z" fill="none" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M16 24 32 34l16-10M32 34v16" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 30h16M24 36h10" stroke="#b8e6c8" stroke-width="3" stroke-linecap="round"/>
+</svg>

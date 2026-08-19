@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Indicadores de inventario</title>
+  <defs>
+    <linearGradient id="g" x1="8" y1="6" x2="55" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16a463"/>
+      <stop offset="1" stop-color="#0b5c38"/>
+    </linearGradient>
+  </defs>
+  <rect x="5" y="5" width="54" height="54" rx="15" fill="url(#g)"/>
+  
+  <!-- Gráfico de barras para indicadores -->
+  <!-- Barra 1 -->
+  <rect x="16" y="32" width="6" height="16" rx="1" fill="#fff" opacity="0.9"/>
+  <!-- Barra 2 (más alta) -->
+  <rect x="26" y="22" width="6" height="26" rx="1" fill="#fff"/>
+  <!-- Barra 3 -->
+  <rect x="36" y="28" width="6" height="20" rx="1" fill="#fff" opacity="0.9"/>
+  <!-- Barra 4 (más baja) -->
+  <rect x="46" y="36" width="6" height="12" rx="1" fill="#fff" opacity="0.85"/>
+  
+  <!-- Línea base -->
+  <line x1="14" y1="48" x2="54" y2="48" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+</svg>

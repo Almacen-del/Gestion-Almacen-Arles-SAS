@@ -1,0 +1,46 @@
+{
+  "name": "gestion-almacen-web",
+  "version": "0.1.8-web-final",
+  "description": "Panel web de gestión de almacén de Arles SAS conectado a Firebase/Firestore.",
+  "author": "Arles SAS",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:rules:unit": "vitest run --config vitest.rules.config.ts",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-arles-gestion --config firebase.rules-test.json \"npm run test:rules:unit\"",
+    "admin:inspect": "node admin/inspect.js",
+    "admin:transform": "node admin/transformInventory.js --collection=inventario",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy:web": "npm run build && firebase deploy --only hosting",
+    "deploy:all": "npm run build && firebase deploy --only hosting,firestore:rules",
+    "verify:web": "npm run test && npm run build"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "firebase": "^12.16.0",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "firebase-admin": "^14.0.0",
+    "minimist": "^1.2.8",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
+  }
+}

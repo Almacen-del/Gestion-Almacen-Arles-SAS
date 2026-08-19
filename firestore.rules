@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Verifica si es el propietario (admin raíz)
+    // El email del propietario debe ser quien administra el sistema
+    function isOwner() {
+      return signedIn()
+        && 'email' in request.auth.token
+        && request.auth.token.email == 'almacen@arlessas.com';
+    }
+
+    function hasUserProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isActive(profile) {
+      let hasActivo = 'activo' in profile;
+      let hasEstado = 'estado' in profile;
+      return (!hasActivo || profile.activo != false)
+        && (
+          (hasActivo && profile.activo == true)
+          || (hasEstado && profile.estado in ['activo', 'Activo', 'ACTIVO'])
+        )
+        && !(hasEstado && profile.estado in [
+          'inactivo', 'Inactivo', 'INACTIVO',
+          'desactivado', 'Desactivado', 'DESACTIVADO',
+          'bloqueado', 'Bloqueado', 'BLOQUEADO',
+          'suspendido', 'Suspendido', 'SUSPENDIDO'
+        ]);
+    }
+
+    function hasAllowedRole(profile) {
+      let allowedRoles = [
+        'owner', 'Owner', 'OWNER',
+        'admin', 'Admin', 'ADMIN',
+        'administrador', 'Administrador', 'ADMINISTRADOR',
+        'almacenista', 'Almacenista', 'ALMACENISTA',
+        'operador', 'Operador', 'OPERADOR'
+      ];
+      
+      return ('rol' in profile && profile.rol in allowedRoles)
+        || ('role' in profile && profile.role in allowedRoles);
+    }
+
+    function isActiveUser() {
+      return isOwner()
+        || (hasUserProfile() 
+            && isActive(userProfile()) 
+            && hasAllowedRole(userProfile()));
+    }
+
+    function isAdmin(profile) {
+      let adminRoles = [
+        'owner', 'Owner', 'OWNER',
+        'admin', 'Admin', 'ADMIN',
+        'administrador', 'Administrador', 'ADMINISTRADOR'
+      ];
+      
+      return ('rol' in profile && profile.rol in adminRoles)
+        || ('role' in profile && profile.role in adminRoles);
+    }
+
+    function hasAdminAccess() {
+      return isOwner()
+        || (hasUserProfile() 
+            && isActive(userProfile()) 
+            && isAdmin(userProfile()));
+    }
+
+    // ========================================
+    // REGLAS POR COLECCIÓN
+    // ========================================
+
+    // Perfiles de usuario: los usuarios autorizados pueden leerlos porque el
+    // panel usa esta colección para responsables/reportes. Solo administradores
+    // pueden crear, modificar o eliminar perfiles y roles.
+    match /usuarios/{uid} {
+      allow read: if isActiveUser();
+      // Una cuenta recién registrada puede crear únicamente su perfil pendiente.
+      // La activación y la asignación de rol quedan reservadas a administradores.
+      allow create: if hasAdminAccess()
+        || (signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.email == request.auth.token.email
+          && request.auth.token.email.matches('^[^@]+@arlessas[.]com$')
+          && request.resource.data.rol == 'pendiente'
+          && request.resource.data.activo == false
+          && request.resource.data.estado == 'pendiente');
+      allow update, delete: if hasAdminAccess();
+    }
+
+    // Colecciones operativas utilizadas por el panel y por los flujos de
+    // inventario. El acceso requiere autenticación + perfil activo + rol válido.
+    match /existencias/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /movimientos/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /productos_aseo/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /herramientas/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /valoraciones_inventario/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /valoraciones_entradas/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /entradas_stock/{document=**} {
+      allow read, write: if isActiveUser();
+    }
+
+    match /cierres_valoracion_inventario/{periodo} {
+      allow read, write: if isActiveUser();
+
+      match /items/{itemId} {
+        allow read, write: if isActiveUser();
+      }
+    }
+
+    // Cualquier colección no declarada queda cerrada por defecto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

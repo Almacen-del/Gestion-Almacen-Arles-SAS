@@ -1,4 +1,4 @@
-Aug 19, 2026 10:31:38 AM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start
+Aug 19, 2026 10:56:57 AM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start
 INFO: Started WebSocket server on ws://127.0.0.1:9150
 
 API endpoint: http://127.0.0.1:8088
@@ -16,19 +16,19 @@ If you are running a Firestore in Datastore Mode project, run:
 Note: Support for Datastore Mode is in preview. If you encounter any bugs please file at https://github.com/firebase/firebase-tools/issues.
 Dev App Server is now running.
 
-Aug 19, 2026 10:31:42 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+Aug 19, 2026 10:57:00 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
 INFO: Detected non-HTTP/2 connection.
-Aug 19, 2026 10:31:43 AM io.grpc.netty.TcpMetrics loadEpollInfo
+Aug 19, 2026 10:57:00 AM io.grpc.netty.TcpMetrics loadEpollInfo
 INFO: Epoll available during static init of TcpMetrics:false
-Aug 19, 2026 10:31:43 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+Aug 19, 2026 10:57:00 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
 INFO: Detected HTTP/2 connection.
-Aug 19, 2026 10:31:45 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+Aug 19, 2026 10:57:01 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
 INFO: Detected non-HTTP/2 connection.
-Aug 19, 2026 10:31:45 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+Aug 19, 2026 10:57:01 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
 INFO: Detected HTTP/2 connection.
-Aug 19, 2026 10:31:46 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+Aug 19, 2026 10:57:02 AM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
 INFO: Detected HTTP/2 connection.
-Aug 19, 2026 10:31:49 AM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+Aug 19, 2026 10:57:03 AM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
 WARNING: Operation failed: 
 evaluation error at L90:24 for 'create' @ L90, false for 'create' @ L141, evaluation error at L98:32 for 'update' @ L98, false for 'update' @ L141, false for 'update' @ L98, false for 'update' @ L141
 com.google.cloud.datastore.core.exception.DatastoreException: 
@@ -59,7 +59,7 @@ evaluation error at L90:24 for 'create' @ L90, false for 'create' @ L141, evalua
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
 	at java.base/java.lang.Thread.run(Unknown Source)
 
-Aug 19, 2026 10:31:50 AM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+Aug 19, 2026 10:57:03 AM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
 WARNING: Operation failed: 
 evaluation error at L90:24 for 'create' @ L90, false for 'create' @ L141, evaluation error at L98:32 for 'update' @ L98, false for 'update' @ L141, false for 'create' @ L90, false for 'create' @ L141
 com.google.cloud.datastore.core.exception.DatastoreException: 
@@ -90,7 +90,7 @@ evaluation error at L90:24 for 'create' @ L90, false for 'create' @ L141, evalua
 	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
 	at java.base/java.lang.Thread.run(Unknown Source)
 
-Aug 19, 2026 10:31:51 AM io.netty.channel.DefaultChannelPipeline onUnhandledInboundException
+Aug 19, 2026 10:57:04 AM io.netty.channel.DefaultChannelPipeline onUnhandledInboundException
 WARNING: An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception.
 java.net.SocketException: Connection reset
 	at java.base/sun.nio.ch.SocketChannelImpl.throwConnectionReset(Unknown Source)
@@ -108,7 +108,7 @@ java.net.SocketException: Connection reset
 	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
 	at java.base/java.lang.Thread.run(Unknown Source)
 
-Aug 19, 2026 10:31:51 AM io.netty.channel.DefaultChannelPipeline onUnhandledInboundException
+Aug 19, 2026 10:57:04 AM io.netty.channel.DefaultChannelPipeline onUnhandledInboundException
 WARNING: An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception.
 java.net.SocketException: Connection reset
 	at java.base/sun.nio.ch.SocketChannelImpl.throwConnectionReset(Unknown Source)

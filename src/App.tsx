@@ -1053,30 +1053,33 @@ function LoginScreen({
 }
 
 const APPROVABLE_ROLES = ['operador', 'almacenista', 'administrador'] as const;
+const EDITABLE_USER_STATES = ['activo', 'inactivo'] as const;
 
 function PendingUsersPanel({
   users,
   onClose,
-  onApprove,
+  onSave,
 }: {
   users: UserProfile[];
   onClose: () => void;
-  onApprove: (profile: UserProfile, role: string, name: string) => Promise<void>;
+  onSave: (profile: UserProfile, role: string, name: string, state: string) => Promise<void>;
 }) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
+  const [selectedStates, setSelectedStates] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState('');
   const [error, setError] = useState('');
 
-  async function approve(profile: UserProfile) {
+  async function save(profile: UserProfile) {
     const role = selectedRoles[profile.id] || 'operador';
     const name = names[profile.id]?.trim() || profile.email || profile.id;
+    const state = selectedStates[profile.id] || (profile.estado === 'pendiente' ? 'activo' : profile.estado || 'activo');
     setSavingId(profile.id);
     setError('');
     try {
-      await onApprove(profile, role, name);
+      await onSave(profile, role, name, state);
     } catch {
-      setError(`No se pudo activar ${profile.email || profile.id}. Verifica los permisos y la conexión.`);
+      setError(`No se pudo guardar ${profile.email || profile.id}. Verifica los permisos y la conexión.`);
     } finally {
       setSavingId('');
     }
@@ -1094,7 +1097,7 @@ function PendingUsersPanel({
         <header className="pending-panel-header">
           <div>
             <p className="eyebrow">Administración</p>
-            <h2 id="pending-panel-title">Cuentas por confirmar</h2>
+            <h2 id="pending-panel-title">Cuentas de usuarios</h2>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Cerrar cuentas pendientes" title="Cerrar">
             <X size={18} />
@@ -1106,7 +1109,7 @@ function PendingUsersPanel({
         {users.length === 0 ? (
           <div className="pending-empty">
             <UserCheck size={26} />
-            <strong>No hay cuentas pendientes</strong>
+            <strong>No hay cuentas registradas</strong>
             <span>Las nuevas cuentas corporativas aparecerán aquí.</span>
           </div>
         ) : (
@@ -1115,12 +1118,12 @@ function PendingUsersPanel({
               <article className="pending-user-row" key={profile.id}>
                 <div className="pending-user-identity">
                   <strong>{profile.email || profile.id}</strong>
-                  <span><Clock3 size={13} /> Esperando autorización</span>
+                  <span><Clock3 size={13} /> {profile.estado === 'pendiente' ? 'Esperando autorización' : 'Cuenta establecida'}</span>
                 </div>
                 <label>
                   Nombre
                   <input
-                    value={names[profile.id] ?? ''}
+                    value={names[profile.id] ?? profile.nombre ?? ''}
                     onChange={(event) => setNames((current) => ({ ...current, [profile.id]: event.target.value }))}
                     placeholder="Nombre del usuario"
                   />
@@ -1128,15 +1131,24 @@ function PendingUsersPanel({
                 <label>
                   Rol
                   <select
-                    value={selectedRoles[profile.id] ?? 'operador'}
+                    value={selectedRoles[profile.id] ?? profile.rol ?? 'operador'}
                     onChange={(event) => setSelectedRoles((current) => ({ ...current, [profile.id]: event.target.value }))}
                   >
-                    {APPROVABLE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+                    {[...new Set([...APPROVABLE_ROLES, profile.rol].filter(Boolean))].map((role) => <option key={role} value={role}>{role}</option>)}
                   </select>
                 </label>
-                <button type="button" onClick={() => { void approve(profile); }} disabled={savingId === profile.id}>
+                <label>
+                  Estado
+                  <select
+                    value={selectedStates[profile.id] ?? (profile.estado === 'pendiente' ? 'activo' : profile.activo === false ? 'inactivo' : 'activo')}
+                    onChange={(event) => setSelectedStates((current) => ({ ...current, [profile.id]: event.target.value }))}
+                  >
+                    {EDITABLE_USER_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
+                  </select>
+                </label>
+                <button type="button" onClick={() => { void save(profile); }} disabled={savingId === profile.id}>
                   <UserCheck size={16} />
-                  {savingId === profile.id ? 'Activando...' : 'Activar cuenta'}
+                  {savingId === profile.id ? 'Guardando...' : profile.estado === 'pendiente' ? 'Activar' : 'Guardar'}
                 </button>
               </article>
             ))}
@@ -1514,15 +1526,16 @@ function AppShell({ user }: { user: User }) {
     return Array.from(uniqueProfiles.values()).sort((left, right) => left.email.localeCompare(right.email));
   }, [users]);
 
-  async function approvePendingUser(profile: UserProfile, role: string, name: string) {
+  async function saveUserProfile(profile: UserProfile, role: string, name: string, state: string) {
+    const isActive = state === 'activo';
     await updateDoc(doc(db, 'usuarios', profile.id), {
       nombres: name,
       nombre: name,
       cargo: role,
       rol: role,
-      activo: true,
-      estado: 'activo',
-      aprobadoEn: new Date().toISOString(),
+      activo: isActive,
+      estado: isActive ? 'activo' : 'inactivo',
+      ...(profile.estado === 'pendiente' ? { aprobadoEn: new Date().toISOString() } : {}),
     });
   }
 
@@ -2228,10 +2241,10 @@ function AppShell({ user }: { user: User }) {
             type="button"
             onClick={() => setShowPendingUsers(true)}
             aria-label={`Cuentas pendientes: ${pendingUsers.length}`}
-            title="Confirmar cuentas nuevas"
+            title="Gestionar cuentas de usuarios"
           >
             <Clock3 size={17} />
-            <span>Confirmar cuentas</span>
+            <span>Gestionar cuentas</span>
             {pendingUsers.length > 0 && <strong>{pendingUsers.length}</strong>}
           </button>
         )}
@@ -2803,9 +2816,13 @@ function AppShell({ user }: { user: User }) {
       )}
       {showPendingUsers && canManageUsers && (
         <PendingUsersPanel
-          users={pendingUsers}
+          users={Object.values(users).filter((profile, index, profiles) => profiles.findIndex((candidate) => candidate.id === profile.id) === index).sort((left, right) => {
+            const leftPending = left.estado === 'pendiente' ? 0 : 1;
+            const rightPending = right.estado === 'pendiente' ? 0 : 1;
+            return leftPending - rightPending || left.email.localeCompare(right.email);
+          })}
           onClose={() => setShowPendingUsers(false)}
-          onApprove={approvePendingUser}
+          onSave={saveUserProfile}
         />
       )}
       {/* Assign QR modal removed: items without code only show availability status */}

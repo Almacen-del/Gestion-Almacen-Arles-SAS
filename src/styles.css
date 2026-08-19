@@ -493,10 +493,11 @@ h2 {
 }
 
 .pending-panel {
-  width: min(720px, calc(100vw - 276px));
+  box-sizing: border-box;
+  width: min(680px, calc(100vw - 276px));
   max-height: calc(100vh - 100px);
   overflow: auto;
-  padding: 20px;
+  padding: 16px;
   background: #ffffff;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -513,7 +514,7 @@ h2 {
 
 .pending-panel-header h2 {
   color: var(--green-900);
-  font-size: 1.35rem;
+  font-size: 1.2rem;
 }
 
 .icon-button {
@@ -536,10 +537,10 @@ h2 {
 
 .pending-user-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(140px, 1fr) 130px auto;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(100px, 0.9fr) 100px 92px auto;
   align-items: end;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px;
   background: #f8fbf7;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -573,7 +574,7 @@ h2 {
 .pending-user-row input,
 .pending-user-row select {
   min-width: 0;
-  padding: 9px 10px;
+  padding: 7px 8px;
   background: white;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -584,8 +585,9 @@ h2 {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 7px 8px;
+  font-size: 0.78rem;
   color: white;
   background: var(--green-700);
   border: 0;
@@ -619,7 +621,7 @@ h2 {
   }
 
   .pending-panel {
-    width: min(720px, calc(100vw - 32px));
+    width: min(680px, calc(100vw - 32px));
   }
 
   .pending-user-row {

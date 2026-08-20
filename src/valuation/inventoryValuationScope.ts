@@ -14,10 +14,15 @@ function normalizeModuleName(moduleName: string) {
 export function isInventoryValuationModuleIncluded(moduleName: string) {
   const normalizedModuleName = normalizeModuleName(moduleName);
   return normalizedModuleName !== TALLER_MODULE
-    && normalizedModuleName !== ASEO_HISTORICO_MODULE
-    && normalizedModuleName !== CONSUMIBLES_HISTORICO_MODULE;
+    && !isHistoricalInventoryModule(moduleName);
 }
 
 export function isAseoHistoricoModule(moduleName: string) {
   return normalizeModuleName(moduleName) === ASEO_HISTORICO_MODULE;
+}
+
+export function isHistoricalInventoryModule(moduleName: string) {
+  const normalizedModuleName = normalizeModuleName(moduleName);
+  return normalizedModuleName === ASEO_HISTORICO_MODULE
+    || normalizedModuleName === CONSUMIBLES_HISTORICO_MODULE;
 }

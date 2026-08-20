@@ -7,4 +7,5 @@ dist/
 .firebase/
 firebase-debug.log
 npm-debug.log*
+outputs/
 .DS_Store

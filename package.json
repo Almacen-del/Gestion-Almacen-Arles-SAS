@@ -14,6 +14,8 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-arles-gestion --config firebase.rules-test.json \"npm run test:rules:unit\"",
     "admin:inspect": "node admin/inspect.js",
     "admin:transform": "node admin/transformInventory.js --collection=inventario",
+    "audit:reconcile-inventory": "node admin/reconcileHistoricalInventory.cjs --project=arles-gestion",
+    "audit:simulate-inventory-migration": "node admin/simulateHistoricalInventoryMigration.cjs",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:web": "npm run build && firebase deploy --only hosting",

@@ -91,7 +91,7 @@ import {
   updateSourceWithError,
 } from './valuation/firestoreSync';
 import {
-  isAseoHistoricoModule,
+  isHistoricalInventoryModule,
   isInventoryValuationModuleIncluded,
 } from './valuation/inventoryValuationScope';
 import {
@@ -1171,7 +1171,7 @@ function AppShell({ user }: { user: User }) {
     return {
       ...cached,
       inventory: cached.inventory
-        .filter((item) => !isAseoHistoricoModule(item.modulo))
+        .filter((item) => !isHistoricalInventoryModule(item.modulo))
         .map(withValuationId),
       aseoInventory: cached.aseoInventory.map(withValuationId),
       tools: cached.tools.map(withValuationId),
@@ -1343,7 +1343,7 @@ function AppShell({ user }: { user: User }) {
         setInventory(
           snapshot.docs
             .map(readInventoryDoc)
-            .filter((item) => !isAseoHistoricoModule(item.modulo)),
+            .filter((item) => !isHistoricalInventoryModule(item.modulo)),
         );
         recordSourceSnapshot('inventory', snapshot.metadata);
       },
@@ -2088,7 +2088,7 @@ function AppShell({ user }: { user: User }) {
       const snapshot = await getDocsFromServer(collection(db, 'existencias'));
       sourceItems = snapshot.docs
         .map(readInventoryDoc)
-        .filter((item) => !isAseoHistoricoModule(item.modulo));
+        .filter((item) => !isHistoricalInventoryModule(item.modulo));
     }
 
     return sourceItems

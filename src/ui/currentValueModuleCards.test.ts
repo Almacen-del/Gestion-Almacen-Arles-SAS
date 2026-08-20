@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isAseoHistoricoModule,
+  isHistoricalInventoryModule,
   isInventoryValuationModuleIncluded,
 } from '../valuation/inventoryValuationScope';
 import { shouldShowCurrentValueModuleCard } from './currentValueModuleCards';
@@ -38,6 +39,13 @@ describe('shouldShowCurrentValueModuleCard', () => {
     expect(isAseoHistoricoModule('ASEO')).toBe(false);
     expect(isAseoHistoricoModule('ASEO HISTORICO ARCHIVO')).toBe(false);
     expect(isAseoHistoricoModule('TALLER')).toBe(false);
+  });
+
+  it('identifica los documentos históricos que no representan productos activos', () => {
+    expect(isHistoricalInventoryModule('ASEO HISTÓRICO')).toBe(true);
+    expect(isHistoricalInventoryModule('Consumibles historico')).toBe(true);
+    expect(isHistoricalInventoryModule('Consumibles')).toBe(false);
+    expect(isHistoricalInventoryModule('Lubricantes taller')).toBe(false);
   });
 
   it('excluye filas, conteos y valor de los módulos fuera del alcance sin mutar la fuente', () => {

@@ -19,7 +19,8 @@ export const DEFAULT_INVENTORY_ANALYSIS_THRESHOLDS: InventoryAnalysisThresholds 
 const STATUS_LABELS: Record<InventoryClassificationStatus, string> = {
   normal: 'Movimiento normal',
   'low-turnover': 'Baja rotación',
-  'no-movement': 'Sin movimiento',
+  'no-movement': 'Sin movimiento reciente',
+  'never-moved': 'Sin movimientos',
   review: 'Revisar',
   'possible-obsolescence': 'Posible obsolescencia',
   'confirmed-obsolete': 'Obsoleto confirmado',
@@ -94,6 +95,16 @@ export function classifyInventoryAnalysis(
       status: 'confirmed-obsolete',
       label: STATUS_LABELS['confirmed-obsolete'],
       reasons: ['El producto tiene una confirmación manual de obsolescencia.'],
+      expired,
+      nearExpiry,
+    };
+  }
+
+  if (analysis.evidence.movementIds.length === 0) {
+    return {
+      status: 'never-moved',
+      label: STATUS_LABELS['never-moved'],
+      reasons: ['El producto no tiene ningún movimiento histórico vinculado.'],
       expired,
       nearExpiry,
     };

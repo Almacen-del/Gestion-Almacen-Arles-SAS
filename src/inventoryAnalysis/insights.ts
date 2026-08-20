@@ -95,6 +95,7 @@ export function buildWarehouseInventorySummary(
     normal: statusCount(current, 'normal'),
     lowTurnover: statusCount(current, 'low-turnover'),
     noMovement: statusCount(current, 'no-movement'),
+    neverMoved: statusCount(current, 'never-moved'),
     possibleObsolescence: statusCount(current, 'possible-obsolescence'),
     review: statusCount(current, 'review'),
   };
@@ -103,6 +104,7 @@ export function buildWarehouseInventorySummary(
     normal: statusCount(previous, 'normal'),
     lowTurnover: statusCount(previous, 'low-turnover'),
     noMovement: statusCount(previous, 'no-movement'),
+    neverMoved: statusCount(previous, 'never-moved'),
     possibleObsolescence: statusCount(previous, 'possible-obsolescence'),
     review: statusCount(previous, 'review'),
   };
@@ -123,6 +125,7 @@ export function buildWarehouseInventorySummary(
       normal: currentCounts.normal - previousCounts.normal,
       lowTurnover: currentCounts.lowTurnover - previousCounts.lowTurnover,
       noMovement: currentCounts.noMovement - previousCounts.noMovement,
+      neverMoved: currentCounts.neverMoved - previousCounts.neverMoved,
       possibleObsolescence: currentCounts.possibleObsolescence - previousCounts.possibleObsolescence,
       review: currentCounts.review - previousCounts.review,
     },

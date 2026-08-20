@@ -3973,6 +3973,11 @@ tbody tr:hover {
   color: #865509;
 }
 
+.analysis-status.status-never-moved {
+  background: #e7eef7;
+  color: #315b86;
+}
+
 .analysis-status.status-review {
   background: #f2eee4;
   color: #6e5a2a;

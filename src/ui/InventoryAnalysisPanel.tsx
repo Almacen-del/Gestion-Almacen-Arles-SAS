@@ -26,13 +26,14 @@ type AnalysisRow = InventoryPeriodAnalysis & {
   classification: ReturnType<typeof classifyInventoryAnalysis>;
 };
 
-type SortKey = 'days' | 'turnover' | 'product';
+type SortKey = 'days' | 'turnover' | 'never-moved' | 'product';
 
 const STATUS_OPTIONS: Array<{ value: InventoryClassificationStatus | ''; label: string }> = [
   { value: '', label: 'Todos los estados' },
   { value: 'normal', label: 'Movimiento normal' },
   { value: 'low-turnover', label: 'Baja rotación' },
-  { value: 'no-movement', label: 'Sin movimiento' },
+  { value: 'no-movement', label: 'Sin movimiento reciente' },
+  { value: 'never-moved', label: 'Sin movimientos' },
   { value: 'review', label: 'Revisar' },
   { value: 'possible-obsolescence', label: 'Posible obsolescencia' },
   { value: 'confirmed-obsolete', label: 'Obsoleto confirmado' },
@@ -208,6 +209,11 @@ export default function InventoryAnalysisPanel({
       .sort((left, right) => {
         if (sortKey === 'product') return left.product.name.localeCompare(right.product.name);
         if (sortKey === 'turnover') return (right.turnover ?? -1) - (left.turnover ?? -1);
+        if (sortKey === 'never-moved') {
+          const leftNeverMoved = left.classification.status === 'never-moved' ? 0 : 1;
+          const rightNeverMoved = right.classification.status === 'never-moved' ? 0 : 1;
+          return leftNeverMoved - rightNeverMoved || left.product.name.localeCompare(right.product.name);
+        }
         return (right.daysWithoutMovement ?? -1) - (left.daysWithoutMovement ?? -1);
       });
   }, [allRows, categoryFilter, locationFilter, moduleFilter, search, sortKey, statusFilter]);
@@ -350,7 +356,8 @@ export default function InventoryAnalysisPanel({
         <article><PackageSearch size={19} /><span>Productos analizados</span><strong>{rows.length}</strong></article>
         <article><RotateCcw size={19} /><span>Movimiento normal</span><strong>{statusCount(rows, 'normal')}</strong></article>
         <article><BarChart3 size={19} /><span>Baja rotación</span><strong>{statusCount(rows, 'low-turnover')}</strong></article>
-        <article><CalendarDays size={19} /><span>Sin movimiento</span><strong>{statusCount(rows, 'no-movement')}</strong></article>
+        <article><CalendarDays size={19} /><span>Sin movimiento reciente</span><strong>{statusCount(rows, 'no-movement')}</strong></article>
+        <article><PackageSearch size={19} /><span>Sin movimientos</span><strong>{statusCount(rows, 'never-moved')}</strong></article>
         <article><AlertTriangle size={19} /><span>Posible obsolescencia</span><strong>{statusCount(rows, 'possible-obsolescence')}</strong></article>
         <article><AlertTriangle size={19} /><span>Obsoletos confirmados</span><strong>{statusCount(rows, 'confirmed-obsolete')}</strong></article>
         <article><AlertTriangle size={19} /><span>Revisar / sin datos suficientes</span><strong>{statusCount(rows, 'review')}</strong></article>
@@ -372,7 +379,8 @@ export default function InventoryAnalysisPanel({
               <li>{warehouseSummary.current.products} referencias incluidas por los filtros.</li>
               <li>{warehouseSummary.current.normal} con movimiento normal.</li>
               <li>{warehouseSummary.current.lowTurnover} con baja rotación.</li>
-              <li>{warehouseSummary.current.noMovement} sin movimiento.</li>
+              <li>{warehouseSummary.current.noMovement} sin movimiento reciente.</li>
+              <li>{warehouseSummary.current.neverMoved} nunca han registrado movimientos.</li>
               <li>{warehouseSummary.current.possibleObsolescence} en posible obsolescencia.</li>
               <li>{warehouseSummary.current.review} requieren revisión de datos.</li>
             </ul>
@@ -382,7 +390,8 @@ export default function InventoryAnalysisPanel({
             <ul>
               <li>Movimiento normal: {signed(warehouseSummary.differences.normal)}</li>
               <li>Baja rotación: {signed(warehouseSummary.differences.lowTurnover)}</li>
-              <li>Sin movimiento: {signed(warehouseSummary.differences.noMovement)}</li>
+              <li>Sin movimiento reciente: {signed(warehouseSummary.differences.noMovement)}</li>
+              <li>Sin movimientos: {signed(warehouseSummary.differences.neverMoved)}</li>
               <li>Posible obsolescencia: {signed(warehouseSummary.differences.possibleObsolescence)}</li>
               <li>Requieren revisión: {signed(warehouseSummary.differences.review)}</li>
             </ul>
@@ -396,7 +405,7 @@ export default function InventoryAnalysisPanel({
       </section>
 
       <section className="analysis-table-panel">
-        <header><div><p className="eyebrow">Detalle trazable</p><h2>Análisis por producto</h2></div><label>Ordenar<select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}><option value="days">Más días sin movimiento</option><option value="turnover">Mayor rotación</option><option value="product">Producto</option></select></label></header>
+        <header><div><p className="eyebrow">Detalle trazable</p><h2>Análisis por producto</h2></div><label>Ordenar<select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}><option value="days">Más días sin movimiento</option><option value="never-moved">Productos sin movimientos</option><option value="turnover">Mayor rotación</option><option value="product">Producto</option></select></label></header>
         <div className="table-wrap">
           <table className="analysis-table">
             <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Inicial</th><th>Entradas</th><th>Salidas</th><th>Final</th><th>Promedio</th><th>Rotación</th><th>Última salida</th><th>Días sin movimiento</th>{hasExpirationData && <th>Vencimiento</th>}<th>Estado</th></tr></thead>

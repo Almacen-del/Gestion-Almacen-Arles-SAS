@@ -51,6 +51,7 @@ export type InventoryAnalysisIssue = {
 export type InventoryAnalysisQuality = 'exact' | 'insufficient' | 'inconsistent';
 
 export type InventoryAnalysisEvidence = {
+  movementIds: string[];
   openingAnchorMovementIds: string[];
   entryMovementIds: string[];
   exitMovementIds: string[];
@@ -81,6 +82,7 @@ export type InventoryClassificationStatus =
   | 'normal'
   | 'low-turnover'
   | 'no-movement'
+  | 'never-moved'
   | 'review'
   | 'possible-obsolescence'
   | 'confirmed-obsolete';

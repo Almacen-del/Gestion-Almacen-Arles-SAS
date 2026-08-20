@@ -18,7 +18,7 @@ function row(overrides: Partial<ClassifiedInventoryAnalysis> = {}): ClassifiedIn
     daysWithoutMovement: 8,
     quality: 'exact',
     issues: [],
-    evidence: { openingAnchorMovementIds: [], entryMovementIds: [], exitMovementIds: [], otherMovementIds: [], lastEntryMovementId: null, lastExitMovementId: null },
+    evidence: { movementIds: ['m1'], openingAnchorMovementIds: [], entryMovementIds: [], exitMovementIds: ['m1'], otherMovementIds: [], lastEntryMovementId: null, lastExitMovementId: 'm1' },
     classification: { status: 'normal', label: 'Movimiento normal', reasons: [], expired: false, nearExpiry: false },
     ...overrides,
   };
@@ -46,5 +46,15 @@ describe('análisis automático basado en datos', () => {
     const summary = buildWarehouseInventorySummary(current, previous);
     expect(summary.differences.noMovement).toBe(1);
     expect(summary.differences.normal).toBe(0);
+  });
+
+  it('cuenta por separado los productos que nunca han registrado movimientos', () => {
+    const neverMoved = row({
+      product: { ...row().product, id: 'p2' },
+      classification: { status: 'never-moved', label: 'Sin movimientos', reasons: [], expired: false, nearExpiry: false },
+    });
+    const summary = buildWarehouseInventorySummary([row(), neverMoved], [row()]);
+    expect(summary.current.neverMoved).toBe(1);
+    expect(summary.differences.neverMoved).toBe(1);
   });
 });

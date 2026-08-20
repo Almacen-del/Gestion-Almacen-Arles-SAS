@@ -27,6 +27,7 @@ function analysis(overrides: Partial<InventoryPeriodAnalysis> = {}): InventoryPe
     quality: 'exact',
     issues: [],
     evidence: {
+      movementIds: ['m1'],
       openingAnchorMovementIds: ['m1'],
       entryMovementIds: [],
       exitMovementIds: ['m1'],
@@ -57,6 +58,48 @@ describe('clasificación configurable del inventario', () => {
       possibleObsolescenceAfterDays: 180,
     });
     expect(result.status).toBe('no-movement');
+  });
+
+  it('clasifica por separado un producto que nunca ha tenido movimientos', () => {
+    const current = analysis({
+      quality: 'insufficient',
+      openingInventory: null,
+      closingInventory: null,
+      averageInventory: null,
+      turnover: null,
+      lastExitDate: null,
+      daysWithoutMovement: null,
+      issues: [{ code: 'missing-balance-anchor', message: 'Sin ancla.' }],
+      evidence: {
+        movementIds: [],
+        openingAnchorMovementIds: [],
+        entryMovementIds: [],
+        exitMovementIds: [],
+        otherMovementIds: [],
+        lastEntryMovementId: null,
+        lastExitMovementId: null,
+      },
+    });
+    expect(classifyInventoryAnalysis(current)).toMatchObject({
+      status: 'never-moved',
+      label: 'Sin movimientos',
+    });
+  });
+
+  it('mantiene en revisión un producto con movimientos sin saldos históricos', () => {
+    const current = analysis({
+      quality: 'insufficient',
+      evidence: {
+        movementIds: ['m1'],
+        openingAnchorMovementIds: [],
+        entryMovementIds: [],
+        exitMovementIds: ['m1'],
+        otherMovementIds: [],
+        lastEntryMovementId: null,
+        lastExitMovementId: 'm1',
+      },
+    });
+    expect(classifyInventoryAnalysis(current).status).toBe('review');
   });
 
   it('marca posible obsolescencia al superar el límite, no obsolescencia confirmada', () => {

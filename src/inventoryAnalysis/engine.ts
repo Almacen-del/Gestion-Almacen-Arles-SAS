@@ -332,6 +332,7 @@ export function analyzeInventoryPeriod(
     quality: qualityFromIssues(finalIssues),
     issues: finalIssues,
     evidence: {
+      movementIds: prepared.map((movement) => movement.id),
       openingAnchorMovementIds: [...new Set(candidates.map((candidate) => candidate.movementId))],
       entryMovementIds: entryMovements.map((movement) => movement.id),
       exitMovementIds: exitMovements.map((movement) => movement.id),

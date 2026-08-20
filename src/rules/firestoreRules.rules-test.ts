@@ -5,7 +5,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, Timestamp, type Firestore } from 'firebase/firestore';
+import { collectionGroup, doc, getDoc, getDocs, query, setDoc, Timestamp, type Firestore } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   emptyValuationRevision,
@@ -127,6 +127,87 @@ describe('isActiveUser en firestore.rules', () => {
     await seedUser('activo-default', { activo: true, rol: 'almacenista' });
     const context = testEnvironment.authenticatedContext('activo-default', { email: 'activo-default@example.com' });
     await assertFails(getDoc(doc(context.firestore(), 'coleccion_no_autorizada', 'documento')));
+  });
+
+  it('conserva acceso a subcolecciones operativas anteriores de existencias', async () => {
+    await seedUser('subcoleccion-activo', { activo: true, rol: 'almacenista' });
+    const context = testEnvironment.authenticatedContext('subcoleccion-activo', { email: 'subcoleccion@example.com' });
+    const legacyRef = doc(context.firestore(), 'existencias', 'producto-legacy', 'trazabilidad_anterior', 'registro-1');
+    await assertSucceeds(setDoc(legacyRef, { cantidad: 1 }));
+    await assertSucceeds(getDoc(legacyRef));
+  });
+
+  it('permite registrar y consultar por collectionGroup un lote válido de Agroquímicos', async () => {
+    await seedUser('lotes-activo', { activo: true, rol: 'almacenista' });
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'existencias', 'agro-1'), {
+        modulo: 'Agroquímicos',
+        cantidad: 10,
+      });
+    });
+    const context = testEnvironment.authenticatedContext('lotes-activo', { email: 'lotes@example.com' });
+    await assertSucceeds(setDoc(
+      doc(context.firestore(), 'existencias', 'agro-1', 'lotes_agroquimicos', 'LOTE-1__2027-01-01'),
+      {
+        producto_id: 'agro-1',
+        numero_lote: 'LOTE-1',
+        fecha_vencimiento: '2027-01-01',
+        cantidad_inicial: 10,
+        cantidad_disponible: 10,
+        unidad: 'KG',
+      },
+    ));
+    await assertSucceeds(getDocs(query(collectionGroup(context.firestore(), 'lotes_agroquimicos'))));
+  });
+
+  it('rechaza lotes negativos, mayores a la cantidad inicial o bajo productos de otro módulo', async () => {
+    await seedUser('lotes-invalidos', { activo: true, rol: 'almacenista' });
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'existencias', 'agro-2'), { modulo: 'Agroquimicos', cantidad: 5 });
+      await setDoc(doc(context.firestore(), 'existencias', 'epp-1'), { modulo: 'EPP', cantidad: 5 });
+    });
+    const context = testEnvironment.authenticatedContext('lotes-invalidos', { email: 'lotes-invalidos@example.com' });
+    const payload = {
+      producto_id: 'agro-2',
+      numero_lote: 'LOTE-2',
+      fecha_vencimiento: '2027-01-01',
+      cantidad_inicial: 5,
+      cantidad_disponible: 6,
+      unidad: 'KG',
+    };
+    await assertFails(setDoc(
+      doc(context.firestore(), 'existencias', 'agro-2', 'lotes_agroquimicos', 'invalido'),
+      payload,
+    ));
+    await assertFails(setDoc(
+      doc(context.firestore(), 'existencias', 'epp-1', 'lotes_agroquimicos', 'invalido'),
+      { ...payload, producto_id: 'epp-1', cantidad_disponible: 5 },
+    ));
+  });
+
+  it('protege la identidad y el límite de una asignación de entrada agroquímica', async () => {
+    await seedUser('asignaciones-activo', { activo: true, rol: 'almacenista' });
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'existencias', 'agro-3'), { modulo: 'Agroquimicos', cantidad: 8 });
+    });
+    const context = testEnvironment.authenticatedContext('asignaciones-activo', { email: 'asignaciones@example.com' });
+    const assignmentRef = doc(
+      context.firestore(),
+      'existencias',
+      'agro-3',
+      'asignaciones_entradas_agroquimicos',
+      'entrada-1',
+    );
+    const payload = {
+      entrada_id: 'entrada-1',
+      producto_id: 'agro-3',
+      cantidad_entrada: 8,
+      cantidad_asignada: 3,
+    };
+    await assertSucceeds(setDoc(assignmentRef, payload));
+    await assertSucceeds(setDoc(assignmentRef, { ...payload, cantidad_asignada: 8 }));
+    await assertFails(setDoc(assignmentRef, { ...payload, producto_id: 'otro-producto' }));
+    await assertFails(setDoc(assignmentRef, { ...payload, cantidad_asignada: 9 }));
   });
 
   it('la transacción manual no sobrescribe un cambio concurrente', async () => {

@@ -76,6 +76,42 @@ service cloud.firestore {
             && isAdmin(userProfile()));
     }
 
+    function isAgrochemicalParent(parentPath) {
+      return exists(/databases/$(database)/documents/$(parentPath))
+        && get(/databases/$(database)/documents/$(parentPath)).data.modulo in [
+          'Agroquimicos', 'Agroquímicos', 'AGROQUIMICOS', 'AGROQUÍMICOS'
+        ];
+    }
+
+    function validAgrochemicalLot(data) {
+      return data.keys().hasAll([
+          'producto_id', 'numero_lote', 'fecha_vencimiento',
+          'cantidad_inicial', 'cantidad_disponible', 'unidad'
+        ])
+        && data.producto_id is string
+        && data.numero_lote is string
+        && data.fecha_vencimiento is string
+        && data.cantidad_inicial is number
+        && data.cantidad_inicial >= 0
+        && data.cantidad_disponible is number
+        && data.cantidad_disponible >= 0
+        && data.cantidad_disponible <= data.cantidad_inicial
+        && data.unidad is string;
+    }
+
+    function validAgrochemicalEntryAssignment(data) {
+      return data.keys().hasAll([
+          'entrada_id', 'producto_id', 'cantidad_entrada', 'cantidad_asignada'
+        ])
+        && data.entrada_id is string
+        && data.producto_id is string
+        && data.cantidad_entrada is number
+        && data.cantidad_entrada > 0
+        && data.cantidad_asignada is number
+        && data.cantidad_asignada >= 0
+        && data.cantidad_asignada <= data.cantidad_entrada;
+    }
+
     // ========================================
     // REGLAS POR COLECCIÓN
     // ========================================
@@ -100,8 +136,17 @@ service cloud.firestore {
 
     // Colecciones operativas utilizadas por el panel y por los flujos de
     // inventario. El acceso requiere autenticación + perfil activo + rol válido.
-    match /existencias/{document=**} {
+    match /existencias/{documentId} {
       allow read, write: if isActiveUser();
+    }
+
+    // Conserva compatibilidad con subcolecciones operativas anteriores. Los dos
+    // nombres de trazabilidad agroquímica se validan en sus reglas dedicadas.
+    match /existencias/{productId}/{subcollection}/{document=**} {
+      allow read, write: if isActiveUser()
+        && !(subcollection in [
+          'lotes_agroquimicos', 'asignaciones_entradas_agroquimicos'
+        ]);
     }
 
     match /movimientos/{document=**} {
@@ -126,6 +171,37 @@ service cloud.firestore {
 
     match /entradas_stock/{document=**} {
       allow read, write: if isActiveUser();
+    }
+
+    // Los lotes se almacenan bajo existencias/{productoId}. El comodín recursivo
+    // permite consultas collectionGroup sin abrir otras colecciones.
+    match /{parentPath=**}/lotes_agroquimicos/{lotId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser()
+        && isAgrochemicalParent(parentPath)
+        && validAgrochemicalLot(request.resource.data);
+      allow update: if isActiveUser()
+        && isAgrochemicalParent(parentPath)
+        && validAgrochemicalLot(request.resource.data)
+        && request.resource.data.producto_id == resource.data.producto_id
+        && request.resource.data.numero_lote == resource.data.numero_lote
+        && request.resource.data.fecha_vencimiento == resource.data.fecha_vencimiento;
+      allow delete: if false;
+    }
+
+    match /{parentPath=**}/asignaciones_entradas_agroquimicos/{entryId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser()
+        && isAgrochemicalParent(parentPath)
+        && validAgrochemicalEntryAssignment(request.resource.data)
+        && request.resource.data.entrada_id == entryId;
+      allow update: if isActiveUser()
+        && isAgrochemicalParent(parentPath)
+        && validAgrochemicalEntryAssignment(request.resource.data)
+        && request.resource.data.entrada_id == entryId
+        && request.resource.data.entrada_id == resource.data.entrada_id
+        && request.resource.data.producto_id == resource.data.producto_id;
+      allow delete: if false;
     }
 
     match /cierres_valoracion_inventario/{periodo} {

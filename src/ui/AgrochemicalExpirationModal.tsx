@@ -111,6 +111,7 @@ export default function AgrochemicalExpirationModal({
     setFormError('');
     setSavedMessage('');
     const parsedQuantity = Number(quantity.replace(',', '.'));
+    if (loading || sourceError) return setFormError('Espera hasta confirmar la lectura completa de los lotes existentes.');
     if (!selectedProduct) return setFormError('Selecciona un producto.');
     if (!lotNumber.trim()) return setFormError('Escribe el número de lote.');
     if (!expirationDate) return setFormError('Selecciona la fecha de vencimiento.');
@@ -240,7 +241,7 @@ export default function AgrochemicalExpirationModal({
               <label>Fecha de ingreso
                 <input type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} />
               </label>
-              <button type="submit" disabled={saving || registrationLimit <= 0}>{saving ? 'Guardando...' : 'Registrar lote'}</button>
+              <button type="submit" disabled={saving || loading || Boolean(sourceError) || registrationLimit <= 0}>{saving ? 'Guardando...' : 'Registrar lote'}</button>
             </form>
             {selectedEntry && <button className="agro-clear-entry" type="button" onClick={() => { setSelectedEntryId(''); setProductDocumentId(''); setQuantity(''); }}>Cancelar selección de entrada</button>}
             {formError && <p className="agro-expiration-message error">{formError}</p>}

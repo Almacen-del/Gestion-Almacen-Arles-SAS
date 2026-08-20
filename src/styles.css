@@ -3696,12 +3696,67 @@ tbody tr:hover {
 .agro-expiration-kpis article strong { color: var(--green-900); font-size: 1.5rem; }
 
 .agro-expiration-register,
-.agro-expiration-table-section {
+.agro-expiration-table-section,
+.agro-pending-entries {
   padding: 17px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
 }
+
+.agro-pending-entries > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 13px;
+}
+
+.agro-pending-entries h3 { margin: 2px 0 0; color: var(--green-950); }
+.agro-pending-entries > header > strong {
+  display: grid;
+  min-width: 38px;
+  min-height: 38px;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff3d8;
+  color: #825008;
+}
+
+.agro-pending-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agro-pending-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #d58b12;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.agro-pending-entry.partial { border-left-color: #2f74bb; }
+.agro-pending-entry.invalid { border-left-color: #b83227; background: #fff8f6; }
+.agro-pending-entry > div { display: grid; gap: 3px; }
+.agro-pending-entry span,
+.agro-pending-entry small { color: var(--muted); font-size: 0.74rem; }
+.agro-pending-entry > button,
+.agro-clear-entry {
+  padding: 8px 11px;
+  border: 1px solid var(--green-700);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--green-800);
+  font-weight: 800;
+}
+.agro-pending-entry > button:disabled { opacity: 0.5; }
+.agro-clear-entry { margin-top: 10px; border-color: var(--line); color: var(--muted); }
 
 .agro-expiration-register > div:first-child,
 .agro-expiration-table-section > header {
@@ -3772,6 +3827,7 @@ tbody tr:hover {
   .agro-expiration-button { margin-left: 0; }
   .agro-expiration-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .agro-expiration-register form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .agro-pending-entry-grid { grid-template-columns: 1fr; }
 }
 
 .analysis-table th,

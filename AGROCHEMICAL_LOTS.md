@@ -20,10 +20,23 @@ Campos del lote:
 - `fecha_ingreso`
 - `cantidad_inicial`
 - `cantidad_disponible`
+- `asignaciones_entrada` (entrada móvil y cantidad incorporada a este lote)
 - `unidad`
 - `ubicacion`
 
 El formulario impide asignar a lotes una cantidad superior al saldo del producto que todavía no tiene lote registrado. Un mismo producto puede tener varios documentos de lote con fechas diferentes.
+
+## Entradas móviles pendientes
+
+La web consulta los movimientos `entrada_stock` de Agroquímicos y compara su cantidad con lo ya asignado a lotes. Una entrada nueva aparece automáticamente como pendiente, sin modificar el movimiento original. Desde esa fila se registra el lote y su fecha de vencimiento; una entrada puede dividirse entre varios lotes.
+
+El acumulado transaccional de cada entrada se conserva en:
+
+```text
+existencias/{productoId}/asignaciones_entradas_agroquimicos/{entradaId}
+```
+
+Esto evita asignar dos veces una misma cantidad, incluso si dos sesiones intentan guardar simultáneamente. La web no crea la entrada, no cambia el saldo general y no registra una salida.
 
 ## Regla para la aplicación móvil
 

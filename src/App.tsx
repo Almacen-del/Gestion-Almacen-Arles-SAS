@@ -6,6 +6,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Camera,
+  CalendarClock,
   ChevronDown,
   CircleDollarSign,
   Clock3,
@@ -27,6 +28,7 @@ import {
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import {
   collection,
+  collectionGroup,
   doc,
   documentId,
   getDocsFromServer,
@@ -35,6 +37,8 @@ import {
   orderBy,
   query,
   QueryDocumentSnapshot,
+  runTransaction,
+  serverTimestamp,
   startAfter,
   updateDoc,
 } from 'firebase/firestore';
@@ -70,6 +74,9 @@ import {
 import SubmoduleButtons from './ui/SubmoduleButtons';
 import InventoryValuationModule from './ui/InventoryValuationModule';
 import InventoryAnalysisPanel from './ui/InventoryAnalysisPanel';
+import AgrochemicalExpirationModal, {
+  type AgrochemicalLotRegistration,
+} from './ui/AgrochemicalExpirationModal';
 import ValuationEditModal from './ui/ValuationEditModal';
 import type { CurrentValuationRow, ValuationSaveState } from './valuation/models';
 import {
@@ -113,6 +120,10 @@ import {
   type InventarioParaReporte,
 } from './reporteMovimientosExcel';
 import { browserPlatform, exportMovementReportWeb } from './platform/browserPlatform';
+import {
+  agrochemicalLotDocumentId,
+  type AgrochemicalLot,
+} from './agrochemicalLots';
 import {
   filterAndSortMovementView,
   loadedMovementHistoryCoversDate,
@@ -466,6 +477,36 @@ function readAseoDoc(doc: QueryDocumentSnapshot): InventoryItem {
     expirationDate: dateTextValue(data, 'fecha_vencimiento', 'fechaVencimiento', 'vencimiento'),
     confirmedObsolete: normalize(textValue(data, 'estado_obsolescencia', 'estadoObsolescencia')) === 'obsoleto confirmado'
       || data.obsoleto_confirmado === true,
+  };
+}
+
+function agrochemicalLotEntryAssignments(data: Record<string, unknown>) {
+  return Array.isArray(data.asignaciones_entrada)
+    ? data.asignaciones_entrada.flatMap((entry: unknown) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const assignment = entry as Record<string, unknown>;
+      const entryId = textValue(assignment, 'entrada_id', 'movimiento_id');
+      const quantity = numberValue(assignment, 'cantidad');
+      return entryId && quantity > 0 ? [{ entryId, quantity }] : [];
+    })
+    : [];
+}
+
+function readAgrochemicalLotDoc(doc: QueryDocumentSnapshot): AgrochemicalLot {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    productDocumentId: doc.ref.parent.parent?.id || textValue(data, 'producto_id', 'documento_id'),
+    productCode: textValue(data, 'codigo_producto', 'codigo_interno', 'codigo'),
+    productName: textValue(data, 'producto', 'item', 'nombre'),
+    lotNumber: textValue(data, 'numero_lote', 'lote', 'numeroLote') || doc.id,
+    expirationDate: dateTextValue(data, 'fecha_vencimiento', 'fechaVencimiento', 'vencimiento'),
+    quantity: numberValue(data, 'cantidad_disponible', 'cantidad', 'saldo', 'stock_actual'),
+    initialQuantity: numberValue(data, 'cantidad_inicial', 'cantidad_entrada', 'cantidad'),
+    unit: textValue(data, 'unidad') || 'Unidad',
+    location: textValue(data, 'ubicacion'),
+    receivedAt: dateTextValue(data, 'fecha_ingreso', 'fecha_entrada', 'createdAt', 'creado_en'),
+    entryAssignments: agrochemicalLotEntryAssignments(data),
   };
 }
 
@@ -1182,6 +1223,9 @@ function AppShell({ user }: { user: User }) {
   const [inventory, setInventory] = useState<InventoryItem[]>(() => cachedPanelData?.inventory ?? []);
   const [aseoInventory, setAseoInventory] = useState<InventoryItem[]>(() => cachedPanelData?.aseoInventory ?? []);
   const [tools, setTools] = useState<InventoryItem[]>(() => cachedPanelData?.tools ?? []);
+  const [agrochemicalLots, setAgrochemicalLots] = useState<AgrochemicalLot[]>([]);
+  const [agrochemicalLotsLoading, setAgrochemicalLotsLoading] = useState(true);
+  const [agrochemicalLotsError, setAgrochemicalLotsError] = useState('');
   const [movements, setMovements] = useState<Movement[]>([]);
   const [hasMoreMovements, setHasMoreMovements] = useState(false);
   const [loadingMoreMovements, setLoadingMoreMovements] = useState(false);
@@ -1202,6 +1246,7 @@ function AppShell({ user }: { user: User }) {
   const [evidenceMovement, setEvidenceMovement] = useState<Movement | null>(null);
   const [showOccupiedModal, setShowOccupiedModal] = useState(false);
   const [showEntriesModal, setShowEntriesModal] = useState(false);
+  const [showAgrochemicalExpirationModal, setShowAgrochemicalExpirationModal] = useState(false);
   const [exitDateFrom, setExitDateFrom] = useState('');
   const [exitDateTo, setExitDateTo] = useState('');
   const [exitCode, setExitCode] = useState('');
@@ -1457,6 +1502,22 @@ function AppShell({ user }: { user: User }) {
   }, []);
 
   useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collectionGroup(db, 'lotes_agroquimicos'),
+      (snapshot) => {
+        setAgrochemicalLots(snapshot.docs.map(readAgrochemicalLotDoc));
+        setAgrochemicalLotsError('');
+        setAgrochemicalLotsLoading(false);
+      },
+      () => {
+        setAgrochemicalLotsError('No se pudieron leer los lotes de agroquímicos. Verifica permisos y conexión.');
+        setAgrochemicalLotsLoading(false);
+      },
+    );
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
     window.addEventListener('online', updateOnline);
     window.addEventListener('offline', updateOnline);
@@ -1505,6 +1566,7 @@ function AppShell({ user }: { user: User }) {
     setEvidenceMovement(null);
     setShowOccupiedModal(false);
     setShowEntriesModal(false);
+    setShowAgrochemicalExpirationModal(false);
   }
 
   function selectModule(nextModule: string) {
@@ -1806,6 +1868,138 @@ function AppShell({ user }: { user: User }) {
     () => inventory.filter((item) => moduleMatches(item.modulo, 'Agroquimicos')),
     [inventory],
   );
+  const agrochemicalExpirationProducts = useMemo(() => agroquimicosInventoryBase
+    .map((item) => ({
+      id: item.id,
+      code: item.codigo,
+      name: item.descripcion,
+      stock: item.saldo,
+      unit: item.unidad,
+      location: item.ubicacion || '',
+    }))
+    .sort((left, right) => left.code.localeCompare(right.code) || left.name.localeCompare(right.name)), [agroquimicosInventoryBase]);
+  const agrochemicalStockEntries = useMemo(() => entryStockMovements.map((entry) => ({
+    id: entry.id,
+    productDocumentId: entry.productId,
+    moduleName: entry.moduleName,
+    code: entry.code,
+    productName: entry.product,
+    quantity: entry.quantity,
+    unit: entry.unit,
+    dateLabel: entry.dateLabel,
+    dateKey: entry.createdAt?.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) || '',
+    createdAtMs: entry.createdAtMs,
+    validationIssue: entry.validationIssue,
+  })), [entryStockMovements]);
+
+  async function registerAgrochemicalLot(registration: AgrochemicalLotRegistration) {
+    const product = agroquimicosInventoryBase.find((item) => item.id === registration.productDocumentId);
+    if (!product) throw new Error('El producto ya no está disponible en el inventario actual.');
+    const lotId = agrochemicalLotDocumentId(registration.lotNumber, registration.expirationDate);
+    if (!lotId) throw new Error('El número de lote o la fecha de vencimiento no son válidos.');
+    const assignedQuantity = agrochemicalLots
+      .filter((lot) => lot.productDocumentId === product.id)
+      .reduce((sum, lot) => sum + Math.max(0, lot.quantity), 0);
+    if (assignedQuantity + registration.quantity > product.saldo + 1e-7) {
+      throw new Error('La cantidad del lote supera el saldo del producto que todavía no tiene lote asignado.');
+    }
+
+    const sourceEntry = registration.sourceEntryId
+      ? entryStockMovements.find((entry) => entry.id === registration.sourceEntryId)
+      : undefined;
+    if (registration.sourceEntryId && !sourceEntry) throw new Error('La entrada móvil ya no está disponible.');
+    if (sourceEntry) {
+      if (sourceEntry.validationIssue) throw new Error(sourceEntry.validationIssue);
+      if (sourceEntry.productId !== product.id || !moduleMatches(sourceEntry.moduleName, 'Agroquimicos')) {
+        throw new Error('La entrada móvil no corresponde al producto Agroquímico seleccionado.');
+      }
+    }
+
+    const productRef = doc(db, 'existencias', product.id);
+    const lotRef = doc(productRef, 'lotes_agroquimicos', lotId);
+    const movementRef = sourceEntry ? doc(db, 'movimientos', sourceEntry.id) : null;
+    const assignmentRef = sourceEntry
+      ? doc(productRef, 'asignaciones_entradas_agroquimicos', sourceEntry.id)
+      : null;
+    await runTransaction(db, async (transaction) => {
+      const [currentProduct, currentLot, currentMovement, currentAssignment] = await Promise.all([
+        transaction.get(productRef),
+        transaction.get(lotRef),
+        movementRef ? transaction.get(movementRef) : Promise.resolve(null),
+        assignmentRef ? transaction.get(assignmentRef) : Promise.resolve(null),
+      ]);
+      if (!currentProduct.exists() || !moduleMatches(textValue(currentProduct.data(), 'modulo'), 'Agroquimicos')) {
+        throw new Error('El producto cambió y ya no pertenece a Agroquímicos.');
+      }
+      const liveStock = numberValue(currentProduct.data(), 'cantidad', 'stock_actual', 'stock', 'saldo');
+      if (assignedQuantity + registration.quantity > liveStock + 1e-7) {
+        throw new Error('El saldo del producto cambió y ya no permite asignar esa cantidad.');
+      }
+
+      let entryAssignments = currentLot.exists()
+        ? agrochemicalLotEntryAssignments(currentLot.data())
+        : [];
+      let assignedToEntry = 0;
+      if (sourceEntry && currentMovement && assignmentRef) {
+        if (!currentMovement.exists()) throw new Error('La entrada móvil ya no existe.');
+        const movementData = currentMovement.data();
+        const movementProductId = textValue(movementData, 'producto_id', 'documento_id');
+        const movementQuantity = numberValue(movementData, 'cantidad', 'cantidad_entrada', 'cantidadNumerica');
+        if (
+          textValue(movementData, 'clase_movimiento') !== 'entrada_stock'
+          || movementProductId !== product.id
+          || !moduleMatches(textValue(movementData, 'modulo'), 'Agroquimicos')
+          || movementQuantity <= 0
+        ) throw new Error('La entrada cambió o ya no es una entrada válida de Agroquímicos.');
+        assignedToEntry = currentAssignment?.exists()
+          ? numberValue(currentAssignment.data(), 'cantidad_asignada')
+          : agrochemicalLots.flatMap((lot) => lot.entryAssignments)
+            .filter((assignment) => assignment.entryId === sourceEntry.id)
+            .reduce((sum, assignment) => sum + assignment.quantity, 0);
+        if (assignedToEntry + registration.quantity > movementQuantity + 1e-7) {
+          throw new Error('La cantidad supera lo que queda pendiente de esa entrada móvil.');
+        }
+        const previousForEntry = entryAssignments.find((entry) => entry.entryId === sourceEntry.id)?.quantity ?? 0;
+        entryAssignments = [
+          ...entryAssignments.filter((entry) => entry.entryId !== sourceEntry.id),
+          { entryId: sourceEntry.id, quantity: previousForEntry + registration.quantity },
+        ];
+        transaction.set(assignmentRef, {
+          entrada_id: sourceEntry.id,
+          producto_id: product.id,
+          cantidad_entrada: movementQuantity,
+          cantidad_asignada: assignedToEntry + registration.quantity,
+          asignacion_completa: Math.abs((assignedToEntry + registration.quantity) - movementQuantity) < 1e-7,
+          actualizado_en: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const previousLotQuantity = currentLot.exists()
+        ? numberValue(currentLot.data(), 'cantidad_disponible', 'cantidad', 'saldo')
+        : 0;
+      const previousInitialQuantity = currentLot.exists()
+        ? numberValue(currentLot.data(), 'cantidad_inicial', 'cantidad_entrada', 'cantidad')
+        : 0;
+      transaction.set(lotRef, {
+        producto_id: product.id,
+        codigo_producto: product.codigo,
+        producto: product.descripcion,
+        numero_lote: registration.lotNumber,
+        fecha_vencimiento: registration.expirationDate,
+        fecha_ingreso: registration.receivedAt,
+        cantidad_inicial: previousInitialQuantity + registration.quantity,
+        cantidad_disponible: previousLotQuantity + registration.quantity,
+        asignaciones_entrada: entryAssignments.map((entry) => ({
+          entrada_id: entry.entryId,
+          cantidad: entry.quantity,
+        })),
+        unidad: product.unidad,
+        ubicacion: product.ubicacion || '',
+        ...(!currentLot.exists() ? { creado_en: serverTimestamp() } : {}),
+        actualizado_en: serverTimestamp(),
+      });
+    });
+  }
   const toolsInventory = useMemo(
     () => visibleToolInventory(tools, usingCachedData && tools.length === 0 && !online),
     [online, tools, usingCachedData],
@@ -2487,6 +2681,15 @@ function AppShell({ user }: { user: User }) {
               ]))}
               allCount={agroquimicosInventoryBase.length}
             />
+            <button
+              type="button"
+              className="agro-expiration-button"
+              onClick={() => setShowAgrochemicalExpirationModal(true)}
+            >
+              <CalendarClock size={17} />
+              Fechas de vencimiento
+              <span className="submodule-badge">{agrochemicalLots.length}</span>
+            </button>
           </div>
         )}
 
@@ -2798,6 +3001,16 @@ function AppShell({ user }: { user: User }) {
           groups={occupiedGroups}
           totalCount={occupiedUnitCards.length}
           onClose={() => setShowOccupiedModal(false)}
+        />
+      )}
+      {showAgrochemicalExpirationModal && isAgroquimicosModule && (
+        <AgrochemicalExpirationModal
+          products={agrochemicalExpirationProducts}
+          lots={agrochemicalLots}
+          loading={agrochemicalLotsLoading}
+          sourceError={agrochemicalLotsError}
+          onRegister={registerAgrochemicalLot}
+          onClose={() => setShowAgrochemicalExpirationModal(false)}
         />
       )}
       {valuationEditItem && (

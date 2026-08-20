@@ -1851,6 +1851,7 @@ function AppShell({ user }: { user: User }) {
   }), [valuationInventory, valuations]);
   const analysisSourceProducts = useMemo(() => [...inventory, ...aseoInventory, ...tools]
     .filter((item) => !item.id.startsWith('fallback-'))
+    .filter((item) => !moduleMatches(item.modulo, 'TALLER'))
     .map((item) => ({
       id: item.id,
       module: item.modulo,
@@ -1864,19 +1865,21 @@ function AppShell({ user }: { user: User }) {
       expirationDate: item.expirationDate,
       confirmedObsolete: item.confirmedObsolete,
     })), [aseoInventory, inventory, tools]);
-  const analysisSourceMovements = useMemo(() => movements.map((movement) => ({
-    id: movement.id,
-    module: movement.modulo,
-    type: movement.tipo,
-    code: movement.codigo,
-    name: movement.descripcion,
-    reference: movement.referencia,
-    quantity: movement.cantidad,
-    occurredAt: movement.fecha,
-    productDocumentId: movement.productDocumentId,
-    stockBefore: movement.stockBefore,
-    stockAfter: movement.stockAfter,
-  })), [movements]);
+  const analysisSourceMovements = useMemo(() => movements
+    .filter((movement) => !moduleMatches(movement.modulo, 'TALLER'))
+    .map((movement) => ({
+      id: movement.id,
+      module: movement.modulo,
+      type: movement.tipo,
+      code: movement.codigo,
+      name: movement.descripcion,
+      reference: movement.referencia,
+      quantity: movement.cantidad,
+      occurredAt: movement.fecha,
+      productDocumentId: movement.productDocumentId,
+      stockBefore: movement.stockBefore,
+      stockAfter: movement.stockAfter,
+    })), [movements]);
 
   useEffect(() => {
     if (

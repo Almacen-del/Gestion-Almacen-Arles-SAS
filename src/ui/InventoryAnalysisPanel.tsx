@@ -407,17 +407,17 @@ export default function InventoryAnalysisPanel({
       <section className="analysis-table-panel">
         <header><div><p className="eyebrow">Detalle trazable</p><h2>Análisis por producto</h2></div><label>Ordenar<select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}><option value="days">Más días sin movimiento</option><option value="never-moved">Productos sin movimientos</option><option value="turnover">Mayor rotación</option><option value="product">Producto</option></select></label></header>
         <div className="table-wrap">
-          <table className="analysis-table">
-            <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Inicial</th><th>Entradas</th><th>Salidas</th><th>Final</th><th>Promedio</th><th>Rotación</th><th>Última salida</th><th>Días sin movimiento</th>{hasExpirationData && <th>Vencimiento</th>}<th>Estado</th></tr></thead>
+          <table className={`analysis-table${hasExpirationData ? ' has-expiration' : ''}`}>
+            <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Inicial</th><th>Entradas</th><th>Salidas</th><th>Final</th><th>Disponible total</th><th>Promedio</th><th>Rotación</th><th>Última salida</th><th>Días sin movimiento</th>{hasExpirationData && <th>Vencimiento</th>}<th>Estado</th></tr></thead>
             <tbody>
               {visibleRows.map((row) => (
                 <tr key={row.product.id} className={row.quality !== 'exact' ? 'analysis-row-review' : ''} title={row.classification.reasons.join(' ')}>
                   <td>{row.product.code || 'Sin código'}</td><td><button type="button" className="analysis-product-link" onClick={() => setSelectedProductId(row.product.id)}>{row.product.name}</button><small>{row.product.module} · {row.product.unit}</small></td><td>{row.product.category}</td>
-                  <td className="numeric">{formatQuantity(row.openingInventory)}</td><td className="numeric">{formatQuantity(row.entries)}</td><td className="numeric">{formatQuantity(row.exits)}</td><td className="numeric">{formatQuantity(row.closingInventory)}</td><td className="numeric">{formatQuantity(row.averageInventory)}</td><td className="numeric">{formatTurnover(row.turnover)}</td>
+                  <td className="numeric">{formatQuantity(row.openingInventory)}</td><td className="numeric">{formatQuantity(row.entries)}</td><td className="numeric">{formatQuantity(row.exits)}</td><td className="numeric">{formatQuantity(row.closingInventory)}</td><td className="numeric analysis-current-stock">{formatQuantity(row.product.currentStock ?? null)}</td><td className="numeric">{formatQuantity(row.averageInventory)}</td><td className="numeric">{formatTurnover(row.turnover)}</td>
                   <td>{row.lastExitDate ?? 'Sin salidas registradas'}</td><td className="numeric">{row.daysWithoutMovement ?? 'N/A'}</td>{hasExpirationData && <td>{row.product.expirationDate || 'N/A'}</td>}<td><span className={`analysis-status status-${row.classification.status}`}>{row.classification.label}</span></td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={hasExpirationData ? 13 : 12} className="empty-cell">No hay productos que coincidan con los filtros.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={hasExpirationData ? 14 : 13} className="empty-cell">No hay productos que coincidan con los filtros.</td></tr>}
             </tbody>
           </table>
         </div>

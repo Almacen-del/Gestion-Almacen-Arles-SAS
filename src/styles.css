@@ -3627,7 +3627,60 @@ tbody tr:hover {
 }
 
 .analysis-table {
-  min-width: 1450px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.analysis-table th,
+.analysis-table td {
+  padding: 8px 6px;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+.analysis-table th {
+  font-size: clamp(0.58rem, 0.66vw, 0.72rem);
+  letter-spacing: 0;
+  white-space: normal;
+}
+
+.analysis-table td {
+  font-size: clamp(0.64rem, 0.7vw, 0.78rem);
+  min-width: 0;
+}
+
+.analysis-table th:nth-child(1) { width: 5.5%; }
+.analysis-table th:nth-child(2) { width: 24%; }
+.analysis-table th:nth-child(3) { width: 11%; }
+.analysis-table th:nth-child(4),
+.analysis-table th:nth-child(5),
+.analysis-table th:nth-child(6),
+.analysis-table th:nth-child(7) { width: 4.5%; }
+.analysis-table th:nth-child(8) { width: 6%; }
+.analysis-table th:nth-child(9),
+.analysis-table th:nth-child(10) { width: 5%; }
+.analysis-table th:nth-child(11) { width: 10%; }
+.analysis-table th:nth-child(12) { width: 7%; }
+.analysis-table th:last-child { width: 10.5%; }
+
+.analysis-table.has-expiration th:nth-last-child(2) { width: 7%; }
+
+.analysis-current-stock {
+  color: var(--green-800);
+  font-weight: 900;
+}
+
+.analysis-table .analysis-status {
+  max-width: 100%;
+  text-align: center;
+  white-space: normal;
+}
+
+.analysis-table .analysis-product-link {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .analysis-table td small {

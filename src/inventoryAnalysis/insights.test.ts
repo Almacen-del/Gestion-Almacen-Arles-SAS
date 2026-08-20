@@ -57,4 +57,14 @@ describe('análisis automático basado en datos', () => {
     expect(summary.current.neverMoved).toBe(1);
     expect(summary.differences.neverMoved).toBe(1);
   });
+
+  it('cuenta por separado los productos sin existencias', () => {
+    const outOfStock = row({
+      product: { ...row().product, id: 'p2' },
+      classification: { status: 'out-of-stock', label: 'Sin existencias', reasons: [], expired: false, nearExpiry: false },
+    });
+    const summary = buildWarehouseInventorySummary([row(), outOfStock], [row()]);
+    expect(summary.current.outOfStock).toBe(1);
+    expect(summary.differences.outOfStock).toBe(1);
+  });
 });

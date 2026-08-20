@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeInventoryPeriod, classifyInventoryMovementType, validateCurrentStockAtCutoff } from './engine';
+import { analyzeInventoryPeriod, classifyInventoryMovementType, reconcileCurrentStockAtCutoff } from './engine';
 import type { InventoryAnalysisMovement, InventoryAnalysisProduct } from './models';
 
 const product: InventoryAnalysisProduct = {
@@ -166,15 +166,26 @@ describe('motor de rotación histórica', () => {
     expect(result.issues.map((issue) => issue.code)).toContain('period-before-history-coverage');
   });
 
-  it('usa el stock actual solo como validación del corte actual, nunca como fórmula histórica', () => {
+  it('usa el disponible actual como cierre autoritativo y reconstruye el inicio del período actual', () => {
     const calculated = analyzeInventoryPeriod(product, [
       movement('m1', '2026-08-01', 'entry', 10, 20, 30),
     ], { from: '2026-08-01', to: '2026-08-18' });
-    const validated = validateCurrentStockAtCutoff(calculated, 25, true);
+    const reconciled = reconcileCurrentStockAtCutoff(calculated, 25, true);
 
-    expect(validated.closingInventory).toBe(30);
-    expect(validated.quality).toBe('inconsistent');
-    expect(validated.issues.map((issue) => issue.code)).toContain('current-stock-mismatch');
+    expect(reconciled).toMatchObject({
+      openingInventory: 15,
+      closingInventory: 25,
+      averageInventory: 20,
+      quality: 'exact',
+    });
+    expect(reconciled.issues).toEqual([]);
+  });
+
+  it('no usa el disponible actual para modificar cálculos de períodos históricos', () => {
+    const calculated = analyzeInventoryPeriod(product, [
+      movement('m1', '2026-07-01', 'entry', 10, 20, 30),
+    ], { from: '2026-07-01', to: '2026-07-31' });
+    expect(reconcileCurrentStockAtCutoff(calculated, 25, false)).toBe(calculated);
   });
 
   it('rechaza fechas imposibles', () => {

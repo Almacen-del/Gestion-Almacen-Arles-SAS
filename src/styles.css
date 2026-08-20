@@ -4031,6 +4031,11 @@ tbody tr:hover {
   color: #315b86;
 }
 
+.analysis-status.status-out-of-stock {
+  background: #eceff1;
+  color: #455a64;
+}
+
 .analysis-status.status-review {
   background: #f2eee4;
   color: #6e5a2a;

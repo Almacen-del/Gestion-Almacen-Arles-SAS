@@ -96,6 +96,7 @@ export function buildWarehouseInventorySummary(
     lowTurnover: statusCount(current, 'low-turnover'),
     noMovement: statusCount(current, 'no-movement'),
     neverMoved: statusCount(current, 'never-moved'),
+    outOfStock: statusCount(current, 'out-of-stock'),
     possibleObsolescence: statusCount(current, 'possible-obsolescence'),
     review: statusCount(current, 'review'),
   };
@@ -105,6 +106,7 @@ export function buildWarehouseInventorySummary(
     lowTurnover: statusCount(previous, 'low-turnover'),
     noMovement: statusCount(previous, 'no-movement'),
     neverMoved: statusCount(previous, 'never-moved'),
+    outOfStock: statusCount(previous, 'out-of-stock'),
     possibleObsolescence: statusCount(previous, 'possible-obsolescence'),
     review: statusCount(previous, 'review'),
   };
@@ -126,6 +128,7 @@ export function buildWarehouseInventorySummary(
       lowTurnover: currentCounts.lowTurnover - previousCounts.lowTurnover,
       noMovement: currentCounts.noMovement - previousCounts.noMovement,
       neverMoved: currentCounts.neverMoved - previousCounts.neverMoved,
+      outOfStock: currentCounts.outOfStock - previousCounts.outOfStock,
       possibleObsolescence: currentCounts.possibleObsolescence - previousCounts.possibleObsolescence,
       review: currentCounts.review - previousCounts.review,
     },

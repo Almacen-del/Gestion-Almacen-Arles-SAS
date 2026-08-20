@@ -39,8 +39,7 @@ export type InventoryAnalysisIssueCode =
   | 'incomplete-balance-path'
   | 'conflicting-balance-anchors'
   | 'negative-balance'
-  | 'period-before-history-coverage'
-  | 'current-stock-mismatch';
+  | 'period-before-history-coverage';
 
 export type InventoryAnalysisIssue = {
   code: InventoryAnalysisIssueCode;
@@ -83,6 +82,7 @@ export type InventoryClassificationStatus =
   | 'low-turnover'
   | 'no-movement'
   | 'never-moved'
+  | 'out-of-stock'
   | 'review'
   | 'possible-obsolescence'
   | 'confirmed-obsolete';

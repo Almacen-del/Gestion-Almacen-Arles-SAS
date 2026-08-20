@@ -215,7 +215,6 @@ function qualityFromIssues(issues: readonly InventoryAnalysisIssue[]) {
     'movement-anchor-mismatch',
     'conflicting-balance-anchors',
     'negative-balance',
-    'current-stock-mismatch',
   ].includes(issue.code))) return 'inconsistent' as const;
   if (issues.length > 0) return 'insufficient' as const;
   return 'exact' as const;
@@ -343,7 +342,7 @@ export function analyzeInventoryPeriod(
   };
 }
 
-export function validateCurrentStockAtCutoff(
+export function reconcileCurrentStockAtCutoff(
   analysis: InventoryPeriodAnalysis,
   currentStock: number | null | undefined,
   cutoffIsCurrent: boolean,
@@ -351,14 +350,37 @@ export function validateCurrentStockAtCutoff(
   if (
     !cutoffIsCurrent
     || !isFiniteNonNegative(currentStock)
-    || analysis.closingInventory === null
-    || Math.abs(analysis.closingInventory - currentStock) <= EPSILON
+    || analysis.otherChanges === null
   ) return analysis;
 
-  const issue: InventoryAnalysisIssue = {
-    code: 'current-stock-mismatch',
-    message: `El cierre reconstruido (${analysis.closingInventory}) no coincide con el stock actual confirmado (${currentStock}).`,
+  const periodDelta = analysis.entries - analysis.exits + analysis.otherChanges;
+  const openingInventory = currentStock - periodDelta;
+  if (openingInventory < -EPSILON) return analysis;
+
+  const ignoredHistoricalAnchorIssues = new Set<InventoryAnalysisIssue['code']>([
+    'invalid-stock-anchor',
+    'movement-anchor-mismatch',
+    'missing-balance-anchor',
+    'conflicting-balance-anchors',
+    'negative-balance',
+  ]);
+  const issues = uniqueIssueList(analysis.issues.filter((issue) => (
+    !ignoredHistoricalAnchorIssues.has(issue.code)
+  )));
+  const normalizedOpening = Math.abs(openingInventory) <= EPSILON ? 0 : openingInventory;
+  const averageInventory = (normalizedOpening + currentStock) / 2;
+  const turnover = Math.abs(averageInventory) > EPSILON
+    ? analysis.exits / averageInventory
+    : null;
+
+  return {
+    ...analysis,
+    openingInventory: normalizedOpening,
+    closingInventory: currentStock,
+    averageInventory,
+    turnover,
+    quality: qualityFromIssues(issues),
+    issues,
+    evidence: { ...analysis.evidence, openingAnchorMovementIds: [] },
   };
-  const issues = uniqueIssueList([...analysis.issues, issue]);
-  return { ...analysis, quality: qualityFromIssues(issues), issues };
 }

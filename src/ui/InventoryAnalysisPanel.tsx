@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, BarChart3, CalendarDays, PackageSearch, RotateCcw, Settings2, TrendingUp, X } from 'lucide-react';
 import { classifyInventoryAnalysis } from '../inventoryAnalysis/classification';
-import { analyzeInventoryPeriod, validateCurrentStockAtCutoff } from '../inventoryAnalysis/engine';
+import { analyzeInventoryPeriod, reconcileCurrentStockAtCutoff } from '../inventoryAnalysis/engine';
 import { movementDateKey } from '../movementView';
 import {
   loadInventoryAnalysisThresholds,
@@ -34,6 +34,7 @@ const STATUS_OPTIONS: Array<{ value: InventoryClassificationStatus | ''; label: 
   { value: 'low-turnover', label: 'Baja rotación' },
   { value: 'no-movement', label: 'Sin movimiento reciente' },
   { value: 'never-moved', label: 'Sin movimientos' },
+  { value: 'out-of-stock', label: 'Sin existencias' },
   { value: 'review', label: 'Revisar' },
   { value: 'possible-obsolescence', label: 'Posible obsolescencia' },
   { value: 'confirmed-obsolete', label: 'Obsoleto confirmado' },
@@ -170,7 +171,7 @@ export default function InventoryAnalysisPanel({
         to: dateTo,
         historyCoverageFrom,
       });
-      const analysis = validateCurrentStockAtCutoff(
+      const analysis = reconcileCurrentStockAtCutoff(
         calculated,
         product.currentStock,
         dateTo === currentDate,
@@ -258,7 +259,7 @@ export default function InventoryAnalysisPanel({
         ...period,
         historyCoverageFrom,
       });
-      const analysis = validateCurrentStockAtCutoff(
+      const analysis = reconcileCurrentStockAtCutoff(
         calculated,
         selectedRow.product.currentStock,
         period.to === currentDate,
@@ -358,6 +359,7 @@ export default function InventoryAnalysisPanel({
         <article><BarChart3 size={19} /><span>Baja rotación</span><strong>{statusCount(rows, 'low-turnover')}</strong></article>
         <article><CalendarDays size={19} /><span>Sin movimiento reciente</span><strong>{statusCount(rows, 'no-movement')}</strong></article>
         <article><PackageSearch size={19} /><span>Sin movimientos</span><strong>{statusCount(rows, 'never-moved')}</strong></article>
+        <article><PackageSearch size={19} /><span>Sin existencias</span><strong>{statusCount(rows, 'out-of-stock')}</strong></article>
         <article><AlertTriangle size={19} /><span>Posible obsolescencia</span><strong>{statusCount(rows, 'possible-obsolescence')}</strong></article>
         <article><AlertTriangle size={19} /><span>Obsoletos confirmados</span><strong>{statusCount(rows, 'confirmed-obsolete')}</strong></article>
         <article><AlertTriangle size={19} /><span>Revisar / sin datos suficientes</span><strong>{statusCount(rows, 'review')}</strong></article>
@@ -381,6 +383,7 @@ export default function InventoryAnalysisPanel({
               <li>{warehouseSummary.current.lowTurnover} con baja rotación.</li>
               <li>{warehouseSummary.current.noMovement} sin movimiento reciente.</li>
               <li>{warehouseSummary.current.neverMoved} nunca han registrado movimientos.</li>
+              <li>{warehouseSummary.current.outOfStock} sin existencias disponibles.</li>
               <li>{warehouseSummary.current.possibleObsolescence} en posible obsolescencia.</li>
               <li>{warehouseSummary.current.review} requieren revisión de datos.</li>
             </ul>
@@ -392,6 +395,7 @@ export default function InventoryAnalysisPanel({
               <li>Baja rotación: {signed(warehouseSummary.differences.lowTurnover)}</li>
               <li>Sin movimiento reciente: {signed(warehouseSummary.differences.noMovement)}</li>
               <li>Sin movimientos: {signed(warehouseSummary.differences.neverMoved)}</li>
+              <li>Sin existencias: {signed(warehouseSummary.differences.outOfStock)}</li>
               <li>Posible obsolescencia: {signed(warehouseSummary.differences.possibleObsolescence)}</li>
               <li>Requieren revisión: {signed(warehouseSummary.differences.review)}</li>
             </ul>

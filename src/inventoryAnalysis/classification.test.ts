@@ -86,6 +86,17 @@ describe('clasificación configurable del inventario', () => {
     });
   });
 
+  it('clasifica como sin existencias un producto cuyo disponible final es cero', () => {
+    const result = classifyInventoryAnalysis(analysis({
+      openingInventory: 1,
+      exits: 1,
+      closingInventory: 0,
+      averageInventory: 0.5,
+      turnover: 2,
+    }));
+    expect(result).toMatchObject({ status: 'out-of-stock', label: 'Sin existencias' });
+  });
+
   it('mantiene en revisión un producto con movimientos sin saldos históricos', () => {
     const current = analysis({
       quality: 'insufficient',
@@ -131,11 +142,11 @@ describe('clasificación configurable del inventario', () => {
     expect(result).toMatchObject({ status: 'normal', nearExpiry: true, expired: false });
   });
 
-  it('no alerta por vencimiento cuando ya no existe stock al cierre', () => {
+  it('clasifica sin existencias y no alerta por vencimiento cuando el saldo final es cero', () => {
     const current = analysis({ openingInventory: 10, exits: 10, closingInventory: 0, averageInventory: 5 });
     current.product = { ...current.product, expirationDate: '2026-03-01' };
     const result = classifyInventoryAnalysis(current);
-    expect(result).toMatchObject({ status: 'review', expired: false });
+    expect(result).toMatchObject({ status: 'out-of-stock', expired: false });
   });
 
   it('permite cambiar límites sin modificar código y recuperarlos del almacenamiento', () => {

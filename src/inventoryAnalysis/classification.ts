@@ -21,6 +21,7 @@ const STATUS_LABELS: Record<InventoryClassificationStatus, string> = {
   'low-turnover': 'Baja rotación',
   'no-movement': 'Sin movimiento reciente',
   'never-moved': 'Sin movimientos',
+  'out-of-stock': 'Sin existencias',
   review: 'Revisar',
   'possible-obsolescence': 'Posible obsolescencia',
   'confirmed-obsolete': 'Obsoleto confirmado',
@@ -89,6 +90,16 @@ export function classifyInventoryAnalysis(
     && expirationDays !== null
     && expirationDays >= 0
     && expirationDays <= thresholds.nearExpiryDays;
+
+  if (analysis.closingInventory === 0) {
+    return {
+      status: 'out-of-stock',
+      label: STATUS_LABELS['out-of-stock'],
+      reasons: ['El producto tiene disponible total igual a cero.'],
+      expired: false,
+      nearExpiry: false,
+    };
+  }
 
   if (analysis.product.confirmedObsolete) {
     return {

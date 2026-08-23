@@ -50,14 +50,17 @@ export type FefoAllocation = {
 };
 
 function dateKeyToUtc(value: string) {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const match = value.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
   if (!match) return Number.NaN;
-  const result = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = match[3] ? Number(match[3]) : new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const result = Date.UTC(year, month - 1, day);
   const date = new Date(result);
   if (
-    date.getUTCFullYear() !== Number(match[1])
-    || date.getUTCMonth() !== Number(match[2]) - 1
-    || date.getUTCDate() !== Number(match[3])
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
   ) return Number.NaN;
   return result;
 }
@@ -89,6 +92,18 @@ export function sortAgrochemicalLotsByFefo(lots: readonly AgrochemicalLot[]) {
     || left.receivedAt.localeCompare(right.receivedAt)
     || left.lotNumber.localeCompare(right.lotNumber)
   ));
+}
+
+export function earliestAvailableLotExpirationByProduct(lots: readonly AgrochemicalLot[]) {
+  const expirationByProduct = new Map<string, string>();
+  sortAgrochemicalLotsByFefo(lots)
+    .filter((lot) => lot.quantity > 0 && Number.isFinite(dateKeyToUtc(lot.expirationDate)))
+    .forEach((lot) => {
+      if (!expirationByProduct.has(lot.productDocumentId)) {
+        expirationByProduct.set(lot.productDocumentId, lot.expirationDate);
+      }
+    });
+  return expirationByProduct;
 }
 
 export function allocateAgrochemicalExitFefo(
@@ -126,7 +141,7 @@ export function agrochemicalLotDocumentId(lotNumber: string, expirationDate: str
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  if (!normalizedLot || !/^\d{4}-\d{2}-\d{2}$/.test(expirationDate)) return '';
+  if (!normalizedLot || !/^\d{4}-\d{2}(?:-\d{2})?$/.test(expirationDate)) return '';
   return `${normalizedLot}__${expirationDate}`;
 }
 

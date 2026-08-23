@@ -43,8 +43,8 @@ export function buildProductInventoryInsights(
   if (current.classification.status === 'possible-obsolescence') {
     insights.push({
       kind: 'alert',
-      title: 'Posible obsolescencia',
-      message: 'El producto cumple los límites configurados de posible obsolescencia y requiere revisión; no se marcó como obsoleto confirmado.',
+      title: 'Obsolescencia',
+      message: 'El producto cumple los límites configurados de obsolescencia y requiere revisión; no se marcó como obsoleto confirmado.',
     });
   }
 

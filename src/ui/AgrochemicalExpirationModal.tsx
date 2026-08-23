@@ -67,6 +67,7 @@ export default function AgrochemicalExpirationModal({
   const [productDocumentId, setProductDocumentId] = useState('');
   const [selectedEntryId, setSelectedEntryId] = useState('');
   const [lotNumber, setLotNumber] = useState('');
+  const [expirationPrecision, setExpirationPrecision] = useState<'day' | 'month'>('day');
   const [expirationDate, setExpirationDate] = useState('');
   const [quantity, setQuantity] = useState('');
   const [receivedAt, setReceivedAt] = useState(today);
@@ -232,7 +233,21 @@ export default function AgrochemicalExpirationModal({
                 <input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} placeholder="Ej. L-2026-08" />
               </label>
               <label>Fecha de vencimiento
-                <input type="date" value={expirationDate} onChange={(event) => setExpirationDate(event.target.value)} />
+                <select
+                  value={expirationPrecision}
+                  onChange={(event) => {
+                    setExpirationPrecision(event.target.value as 'day' | 'month');
+                    setExpirationDate('');
+                  }}
+                >
+                  <option value="day">Día exacto</option>
+                  <option value="month">Solo mes (según etiqueta)</option>
+                </select>
+                <input
+                  type={expirationPrecision === 'month' ? 'month' : 'date'}
+                  value={expirationDate}
+                  onChange={(event) => setExpirationDate(event.target.value)}
+                />
               </label>
               <label>Cantidad del lote
                 <input type="number" min="0.01" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
@@ -266,7 +281,7 @@ export default function AgrochemicalExpirationModal({
                     const days = daysUntilExpiration(lot.expirationDate, today);
                     return <tr key={`${lot.productDocumentId}-${lot.id}`}>
                       <td><strong>{product?.code || lot.productCode}</strong><span>{product?.name || lot.productName}</span></td>
-                      <td>{lot.lotNumber}</td><td>{lot.receivedAt || 'Sin fecha'}</td><td>{lot.expirationDate || 'Sin fecha'}</td>
+                      <td>{lot.lotNumber}</td><td>{lot.receivedAt || 'Sin fecha'}</td><td>{lot.expirationDate ? `${lot.expirationDate}${lot.expirationDate.length === 7 ? ' (fin de mes)' : ''}` : 'Sin fecha'}</td>
                       <td>{days === null ? 'N/A' : days}</td><td>{formatQuantity(lot.quantity)} {lot.unit}</td>
                       <td>{lot.location || product?.location || 'Sin ubicación'}</td>
                       <td><span className={`agro-lot-status ${status}`}>{STATUS_LABELS[status]}</span></td>

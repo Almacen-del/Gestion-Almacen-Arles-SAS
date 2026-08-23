@@ -91,6 +91,7 @@ service cloud.firestore {
         && data.producto_id is string
         && data.numero_lote is string
         && data.fecha_vencimiento is string
+        && data.fecha_vencimiento.matches('^\\d{4}-\\d{2}(-\\d{2})?$')
         && data.cantidad_inicial is number
         && data.cantidad_inicial >= 0
         && data.cantidad_disponible is number

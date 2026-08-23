@@ -1459,7 +1459,8 @@ h2 {
   gap: 10px;
 }
 
-.valuation-module-grid button {
+.valuation-module-grid button,
+.valuation-module-grid .valuation-exit-expense-card {
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -3454,6 +3455,110 @@ tbody tr:hover {
   color: #744a08;
 }
 
+.valuation-module-grid .valuation-exit-expense-card {
+  --card-accent: #176f46;
+  border-top-color: var(--card-accent);
+}
+
+.valuation-missing-exit-prices summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--green-800);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.valuation-missing-exit-prices ul {
+  display: grid;
+  gap: 5px;
+  max-height: 180px;
+  margin: 7px 0 0;
+  padding: 7px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  list-style: none;
+}
+
+.valuation-missing-exit-prices li {
+  display: grid;
+  gap: 1px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #edf3ed;
+}
+
+.valuation-missing-exit-prices li span {
+  color: var(--ink);
+  font-size: 0.68rem;
+  text-transform: none;
+}
+
+.analysis-data-warning-content {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+}
+
+.analysis-data-warning details summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.analysis-excluded-movements {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-height: 310px;
+  margin-top: 9px;
+  overflow: auto;
+}
+
+.analysis-excluded-movements section {
+  padding: 10px;
+  border: 1px solid #edcf9f;
+  border-radius: 8px;
+  background: #fffdf7;
+}
+
+.analysis-excluded-movements section > small {
+  display: block;
+  margin-top: 3px;
+}
+
+.analysis-excluded-movements ul {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis-excluded-movements li {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f1dfc0;
+  font-size: 0.75rem;
+}
+
+.analysis-excluded-movements li span {
+  color: #80663d;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .analysis-excluded-movements {
+    grid-template-columns: 1fr;
+  }
+}
+
 .analysis-controls {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -3535,10 +3640,46 @@ tbody tr:hover {
   font-size: 1.7rem;
 }
 
+.analysis-kpis .analysis-kpi-detail {
+  grid-column: 1 / -1;
+  margin-top: -4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .analysis-ranking-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.analysis-rotation-note {
+  display: grid;
+  gap: 7px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7fbf7;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.analysis-rotation-note strong {
+  color: var(--green-800);
+}
+
+.analysis-rotation-note div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 18px;
+}
+
+.analysis-rotation-note span {
+  white-space: nowrap;
 }
 
 .analysis-ranking {

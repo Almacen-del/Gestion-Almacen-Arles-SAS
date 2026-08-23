@@ -1,5 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BarChart3, CalendarDays, PackageSearch, RotateCcw, Settings2, TrendingUp, X } from 'lucide-react';
+import {
+  buildAgrochemicalEntryQueue,
+  daysUntilExpiration,
+  type AgrochemicalLot,
+  type AgrochemicalStockEntry,
+} from '../agrochemicalLots';
 import { classifyInventoryAnalysis } from '../inventoryAnalysis/classification';
 import { analyzeInventoryPeriod, reconcileCurrentStockAtCutoff } from '../inventoryAnalysis/engine';
 import { movementDateKey } from '../movementView';
@@ -8,10 +14,7 @@ import {
   saveInventoryAnalysisThresholds,
 } from '../inventoryAnalysis/settings';
 import { adaptInventoryAnalysisSources } from '../inventoryAnalysis/sourceAdapter';
-import {
-  buildProductInventoryInsights,
-  buildWarehouseInventorySummary,
-} from '../inventoryAnalysis/insights';
+import { buildProductInventoryInsights } from '../inventoryAnalysis/insights';
 import type {
   InventoryAnalysisSourceMovement,
   InventoryAnalysisSourceProduct,
@@ -36,7 +39,7 @@ const STATUS_OPTIONS: Array<{ value: InventoryClassificationStatus | ''; label: 
   { value: 'never-moved', label: 'Sin movimientos' },
   { value: 'out-of-stock', label: 'Sin existencias' },
   { value: 'review', label: 'Revisar' },
-  { value: 'possible-obsolescence', label: 'Posible obsolescencia' },
+  { value: 'possible-obsolescence', label: 'Obsolescencia' },
   { value: 'confirmed-obsolete', label: 'Obsoleto confirmado' },
 ];
 
@@ -106,33 +109,19 @@ function monthlyPeriodsEndingAt(cutoff: string, count = 12) {
   });
 }
 
-function previousEquivalentPeriod(from: string, to: string) {
-  const fromMatch = from.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const toMatch = to.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!fromMatch || !toMatch) return null;
-  const fromUtc = Date.UTC(Number(fromMatch[1]), Number(fromMatch[2]) - 1, Number(fromMatch[3]));
-  const toUtc = Date.UTC(Number(toMatch[1]), Number(toMatch[2]) - 1, Number(toMatch[3]));
-  const days = Math.floor((toUtc - fromUtc) / (24 * 60 * 60 * 1000)) + 1;
-  if (days <= 0) return null;
-  const previousTo = new Date(fromUtc - 24 * 60 * 60 * 1000);
-  const previousFrom = new Date(previousTo.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
-  const utcKey = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-  return { from: utcKey(previousFrom), to: utcKey(previousTo) };
-}
-
-function signed(value: number) {
-  return value > 0 ? `+${value}` : String(value);
-}
-
 export default function InventoryAnalysisPanel({
   sourceProducts,
   sourceMovements,
+  expirationLots,
+  agrochemicalEntries,
   historyComplete,
   loadingHistory,
   onLoadCompleteHistory,
 }: {
   sourceProducts: readonly InventoryAnalysisSourceProduct[];
   sourceMovements: readonly InventoryAnalysisSourceMovement[];
+  expirationLots: readonly AgrochemicalLot[];
+  agrochemicalEntries: readonly AgrochemicalStockEntry[];
   historyComplete: boolean;
   loadingHistory: boolean;
   onLoadCompleteHistory: () => Promise<void>;
@@ -158,11 +147,45 @@ export default function InventoryAnalysisPanel({
     sourceMovements,
     sourceProducts,
   ]);
+  const excludedMovementDetails = useMemo(() => {
+    const movementById = new Map(sourceMovements.map((movement) => [movement.id, movement]));
+    return {
+      unresolved: adapted.unresolvedMovementIds.flatMap((id) => {
+        const movement = movementById.get(id);
+        return movement ? [movement] : [];
+      }),
+      ambiguous: adapted.ambiguousMovementIds.flatMap((id) => {
+        const movement = movementById.get(id);
+        return movement ? [movement] : [];
+      }),
+    };
+  }, [adapted.ambiguousMovementIds, adapted.unresolvedMovementIds, sourceMovements]);
+  const excludedMovementCount = adapted.unresolvedMovementIds.length + adapted.ambiguousMovementIds.length;
+  const excludedMovementSummary = [
+    adapted.unresolvedMovementIds.length > 0
+      ? `${adapted.unresolvedMovementIds.length} ${adapted.unresolvedMovementIds.length === 1 ? 'movimiento' : 'movimientos'} sin producto identificable`
+      : '',
+    adapted.ambiguousMovementIds.length > 0
+      ? `${adapted.ambiguousMovementIds.length} ${adapted.ambiguousMovementIds.length === 1 ? 'movimiento ambiguo' : 'movimientos ambiguos'}`
+      : '',
+  ].filter(Boolean).join(' y ');
   const historyCoverageFrom = useMemo(() => sourceMovements
     .map((movement) => movementDateKey(movement.occurredAt))
     .filter(Boolean)
     .sort()[0] ?? '', [sourceMovements]);
-  const currentDate = localDateKey(new Date());
+  const [currentDate, setCurrentDate] = useState(() => localDateKey(new Date()));
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nextDate = localDateKey(new Date());
+      setCurrentDate((previousDate) => {
+        if (nextDate !== previousDate) {
+          setDateTo((currentDateTo) => currentDateTo === previousDate ? nextDate : currentDateTo);
+        }
+        return nextDate;
+      });
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const allRows = useMemo<AnalysisRow[]>(() => {
     if (!historyComplete || !dateFrom || !dateTo || dateFrom > dateTo) return [];
     return adapted.products.map((product) => {
@@ -179,18 +202,6 @@ export default function InventoryAnalysisPanel({
       return { ...analysis, classification: classifyInventoryAnalysis(analysis, thresholds) };
     });
   }, [adapted.movements, adapted.products, currentDate, dateFrom, dateTo, historyComplete, historyCoverageFrom, thresholds]);
-  const previousPeriod = useMemo(() => previousEquivalentPeriod(dateFrom, dateTo), [dateFrom, dateTo]);
-  const previousAllRows = useMemo<AnalysisRow[]>(() => {
-    if (!historyComplete || !previousPeriod) return [];
-    return adapted.products.map((product) => {
-      const analysis = analyzeInventoryPeriod(product, adapted.movements, {
-        ...previousPeriod,
-        historyCoverageFrom,
-      });
-      return { ...analysis, classification: classifyInventoryAnalysis(analysis, thresholds) };
-    });
-  }, [adapted.movements, adapted.products, historyComplete, historyCoverageFrom, previousPeriod, thresholds]);
-
   const moduleOptions = useMemo(() => [...new Set(adapted.products.map((product) => product.module))].sort(), [adapted.products]);
   const categoryOptions = useMemo(() => [...new Set(adapted.products
     .filter((product) => !moduleFilter || product.module === moduleFilter)
@@ -218,27 +229,6 @@ export default function InventoryAnalysisPanel({
         return (right.daysWithoutMovement ?? -1) - (left.daysWithoutMovement ?? -1);
       });
   }, [allRows, categoryFilter, locationFilter, moduleFilter, search, sortKey, statusFilter]);
-  const warehouseCurrentRows = useMemo(() => {
-    const query = normalized(search);
-    return allRows
-      .filter((row) => !moduleFilter || row.product.module === moduleFilter)
-      .filter((row) => !categoryFilter || row.product.category === categoryFilter)
-      .filter((row) => !locationFilter || row.product.location === locationFilter)
-      .filter((row) => !query || normalized(`${row.product.code} ${row.product.name}`).includes(query));
-  }, [allRows, categoryFilter, locationFilter, moduleFilter, search]);
-  const warehousePreviousRows = useMemo(() => {
-    const query = normalized(search);
-    return previousAllRows
-      .filter((row) => !moduleFilter || row.product.module === moduleFilter)
-      .filter((row) => !categoryFilter || row.product.category === categoryFilter)
-      .filter((row) => !locationFilter || row.product.location === locationFilter)
-      .filter((row) => !query || normalized(`${row.product.code} ${row.product.name}`).includes(query));
-  }, [categoryFilter, locationFilter, moduleFilter, previousAllRows, search]);
-  const warehouseSummary = useMemo(() => buildWarehouseInventorySummary(
-    warehouseCurrentRows,
-    warehousePreviousRows,
-  ), [warehouseCurrentRows, warehousePreviousRows]);
-
   const topTurnover = useMemo(() => rows.filter((row) => row.turnover !== null)
     .sort((left, right) => (right.turnover ?? 0) - (left.turnover ?? 0)).slice(0, 10), [rows]);
   const longestWithoutMovement = useMemo(() => rows.filter((row) => row.daysWithoutMovement !== null)
@@ -249,6 +239,37 @@ export default function InventoryAnalysisPanel({
   const possibleObsolescence = useMemo(() => rows
     .filter((row) => row.classification.status === 'possible-obsolescence')
     .slice(0, 10), [rows]);
+  const nearExpiryLots = useMemo(() => {
+    const productById = new Map(sourceProducts.map((product) => [product.id, product]));
+    const query = normalized(search);
+    return expirationLots
+      .map((lot) => ({ lot, product: productById.get(lot.productDocumentId), days: daysUntilExpiration(lot.expirationDate, dateTo) }))
+      .filter((entry) => entry.product && entry.lot.quantity > 0 && entry.days !== null && entry.days >= 0 && entry.days <= thresholds.nearExpiryDays)
+      .filter((entry) => !moduleFilter || entry.product?.module === moduleFilter)
+      .filter((entry) => !categoryFilter || entry.product?.category === categoryFilter)
+      .filter((entry) => !locationFilter || entry.product?.location === locationFilter)
+      .filter((entry) => !query || normalized(`${entry.product?.code ?? ''} ${entry.product?.name ?? ''} ${entry.lot.lotNumber}`).includes(query))
+      .sort((left, right) => (left.days ?? Number.POSITIVE_INFINITY) - (right.days ?? Number.POSITIVE_INFINITY));
+  }, [categoryFilter, dateTo, expirationLots, locationFilter, moduleFilter, search, sourceProducts, thresholds.nearExpiryDays]);
+  const nearExpiryProductCount = useMemo(() => new Set(
+    nearExpiryLots.map((entry) => entry.lot.productDocumentId),
+  ).size, [nearExpiryLots]);
+  const expiredLots = useMemo(() => {
+    const productById = new Map(sourceProducts.map((product) => [product.id, product]));
+    const query = normalized(search);
+    return expirationLots
+      .map((lot) => ({ lot, product: productById.get(lot.productDocumentId), days: daysUntilExpiration(lot.expirationDate, dateTo) }))
+      .filter((entry) => entry.product && entry.lot.quantity > 0 && entry.days !== null && entry.days < 0)
+      .filter((entry) => !moduleFilter || entry.product?.module === moduleFilter)
+      .filter((entry) => !categoryFilter || entry.product?.category === categoryFilter)
+      .filter((entry) => !locationFilter || entry.product?.location === locationFilter)
+      .filter((entry) => !query || normalized(`${entry.product?.code ?? ''} ${entry.product?.name ?? ''} ${entry.lot.lotNumber}`).includes(query))
+      .sort((left, right) => (left.days ?? 0) - (right.days ?? 0));
+  }, [categoryFilter, dateTo, expirationLots, locationFilter, moduleFilter, search, sourceProducts]);
+  const pendingLotAssignments = useMemo(() => buildAgrochemicalEntryQueue(
+    agrochemicalEntries,
+    expirationLots,
+  ).filter((entry) => entry.assignmentStatus !== 'assigned'), [agrochemicalEntries, expirationLots]);
   const visibleRows = rows.slice(0, visibleLimit);
   const hasExpirationData = rows.some((row) => Boolean(row.product.expirationDate));
   const selectedRow = allRows.find((row) => row.product.id === selectedProductId) ?? null;
@@ -323,10 +344,26 @@ export default function InventoryAnalysisPanel({
       {(adapted.unresolvedMovementIds.length > 0 || adapted.ambiguousMovementIds.length > 0) && (
         <div className="analysis-data-warning">
           <AlertTriangle size={18} />
-          <span>
-            {adapted.unresolvedMovementIds.length} movimientos sin producto identificable y{' '}
-            {adapted.ambiguousMovementIds.length} ambiguos quedaron fuera del cálculo para evitar asignaciones inventadas.
-          </span>
+          <div className="analysis-data-warning-content">
+            <span>
+              {excludedMovementSummary} {excludedMovementCount === 1 ? 'quedó' : 'quedaron'} fuera del cálculo para evitar asignaciones inventadas.
+            </span>
+            <details>
+              <summary>Ver cuáles son y por qué</summary>
+              <div className="analysis-excluded-movements">
+                {excludedMovementDetails.unresolved.length > 0 && <section>
+                  <strong>Sin producto identificable ({excludedMovementDetails.unresolved.length})</strong>
+                  <small>No coinciden con ningún producto actual por documento, código ni descripción.</small>
+                  <ul>{excludedMovementDetails.unresolved.map((movement) => <li key={movement.id}><b>{movement.code || 'Sin código'} · {movement.name}</b><span>{movement.module} · {movement.type} · {movement.occurredAt || 'Sin fecha'} · ID {movement.id}</span></li>)}</ul>
+                </section>}
+                {excludedMovementDetails.ambiguous.length > 0 && <section>
+                  <strong>Ambiguos ({excludedMovementDetails.ambiguous.length})</strong>
+                  <small>Coinciden con más de un producto actual, por lo que no se puede elegir uno sin inventar la asignación.</small>
+                  <ul>{excludedMovementDetails.ambiguous.map((movement) => <li key={movement.id}><b>{movement.code || 'Sin código'} · {movement.name}</b><span>{movement.module} · {movement.type} · {movement.occurredAt || 'Sin fecha'} · ID {movement.id}</span></li>)}</ul>
+                </section>}
+              </div>
+            </details>
+          </div>
         </div>
       )}
 
@@ -347,7 +384,7 @@ export default function InventoryAnalysisPanel({
           <label>Rotación máxima baja<input type="number" min="0" step="0.01" value={thresholds.lowTurnoverMaximum} onChange={(event) => updateThreshold('lowTurnoverMaximum', event.target.value)} /></label>
           <label>Días para baja rotación<input type="number" min="0" value={thresholds.lowTurnoverAfterDays} onChange={(event) => updateThreshold('lowTurnoverAfterDays', event.target.value)} /></label>
           <label>Días sin movimiento<input type="number" min="0" value={thresholds.noMovementAfterDays} onChange={(event) => updateThreshold('noMovementAfterDays', event.target.value)} /></label>
-          <label>Días para posible obsolescencia<input type="number" min="0" value={thresholds.possibleObsolescenceAfterDays} onChange={(event) => updateThreshold('possibleObsolescenceAfterDays', event.target.value)} /></label>
+          <label>Días para obsolescencia<input type="number" min="0" value={thresholds.possibleObsolescenceAfterDays} onChange={(event) => updateThreshold('possibleObsolescenceAfterDays', event.target.value)} /></label>
           <label>Días de próximo vencimiento<input type="number" min="0" value={thresholds.nearExpiryDays} onChange={(event) => updateThreshold('nearExpiryDays', event.target.value)} /></label>
           <small>Estos límites se guardan en este equipo y pueden cambiarse sin modificar el programa.</small>
         </section>
@@ -360,52 +397,30 @@ export default function InventoryAnalysisPanel({
         <article><CalendarDays size={19} /><span>Sin movimiento reciente</span><strong>{statusCount(rows, 'no-movement')}</strong></article>
         <article><PackageSearch size={19} /><span>Sin movimientos</span><strong>{statusCount(rows, 'never-moved')}</strong></article>
         <article><PackageSearch size={19} /><span>Sin existencias</span><strong>{statusCount(rows, 'out-of-stock')}</strong></article>
-        <article><AlertTriangle size={19} /><span>Posible obsolescencia</span><strong>{statusCount(rows, 'possible-obsolescence')}</strong></article>
+        <article><AlertTriangle size={19} /><span>Obsolescencia</span><strong>{statusCount(rows, 'possible-obsolescence')}</strong><small className="analysis-kpi-detail">{statusCount(rows, 'possible-obsolescence')} productos · {expiredLots.length} lotes</small></article>
+        <article><CalendarDays size={19} /><span>Productos próximos a vencer en {thresholds.nearExpiryDays} días</span><strong>{nearExpiryProductCount}</strong></article>
         <article><AlertTriangle size={19} /><span>Obsoletos confirmados</span><strong>{statusCount(rows, 'confirmed-obsolete')}</strong></article>
         <article><AlertTriangle size={19} /><span>Revisar / sin datos suficientes</span><strong>{statusCount(rows, 'review')}</strong></article>
       </section>
+
+      <aside className="analysis-rotation-note" aria-label="Guía del índice de rotación">
+        <strong>Rotación</strong>
+        <div>
+          <span><b>2,00:</b> Alta</span>
+          <span><b>1,50:</b> Media-alta</span>
+          <span><b>1,00:</b> Media</span>
+          <span><b>0,50:</b> Baja</span>
+          <span><b>0,00:</b> Nula</span>
+        </div>
+      </aside>
 
       <section className="analysis-ranking-grid">
         <article className="analysis-ranking"><h3>Mayor rotación</h3>{topTurnover.length === 0 ? <p>Sin resultados calculables.</p> : <ol>{topTurnover.map((row) => <li key={row.product.id}><span>{row.product.code} · {row.product.name}</span><strong>{formatTurnover(row.turnover)}</strong></li>)}</ol>}</article>
         <article className="analysis-ranking"><h3>Más días sin movimiento</h3>{longestWithoutMovement.length === 0 ? <p>Sin salidas históricas fechadas.</p> : <ol>{longestWithoutMovement.map((row) => <li key={row.product.id}><span>{row.product.code} · {row.product.name}</span><strong>{row.daysWithoutMovement} días</strong></li>)}</ol>}</article>
         <article className="analysis-ranking"><h3>Menor rotación con stock</h3>{lowestTurnover.length === 0 ? <p>Sin resultados calculables.</p> : <ol>{lowestTurnover.map((row) => <li key={row.product.id}><span>{row.product.code} · {row.product.name}</span><strong>{formatTurnover(row.turnover)}</strong></li>)}</ol>}</article>
-        <article className="analysis-ranking"><h3>Posible obsolescencia</h3>{possibleObsolescence.length === 0 ? <p>Ningún producto supera los límites configurados.</p> : <ol>{possibleObsolescence.map((row) => <li key={row.product.id}><span>{row.product.code} · {row.product.name}</span><strong>{row.daysWithoutMovement ?? 'N/A'} días</strong></li>)}</ol>}</article>
-      </section>
-
-      <section className="analysis-automatic-summary">
-        <header><div><p className="eyebrow">Análisis del inventario</p><h2>Resumen del período</h2></div><span>{dateFrom} a {dateTo}</span></header>
-        <div className="analysis-summary-columns">
-          <article>
-            <h3>Datos calculados</h3>
-            <ul>
-              <li>{warehouseSummary.current.products} referencias incluidas por los filtros.</li>
-              <li>{warehouseSummary.current.normal} con movimiento normal.</li>
-              <li>{warehouseSummary.current.lowTurnover} con baja rotación.</li>
-              <li>{warehouseSummary.current.noMovement} sin movimiento reciente.</li>
-              <li>{warehouseSummary.current.neverMoved} nunca han registrado movimientos.</li>
-              <li>{warehouseSummary.current.outOfStock} sin existencias disponibles.</li>
-              <li>{warehouseSummary.current.possibleObsolescence} en posible obsolescencia.</li>
-              <li>{warehouseSummary.current.review} requieren revisión de datos.</li>
-            </ul>
-          </article>
-          <article>
-            <h3>Comparación con {previousPeriod ? `${previousPeriod.from} a ${previousPeriod.to}` : 'el período anterior'}</h3>
-            <ul>
-              <li>Movimiento normal: {signed(warehouseSummary.differences.normal)}</li>
-              <li>Baja rotación: {signed(warehouseSummary.differences.lowTurnover)}</li>
-              <li>Sin movimiento reciente: {signed(warehouseSummary.differences.noMovement)}</li>
-              <li>Sin movimientos: {signed(warehouseSummary.differences.neverMoved)}</li>
-              <li>Sin existencias: {signed(warehouseSummary.differences.outOfStock)}</li>
-              <li>Posible obsolescencia: {signed(warehouseSummary.differences.possibleObsolescence)}</li>
-              <li>Requieren revisión: {signed(warehouseSummary.differences.review)}</li>
-            </ul>
-          </article>
-          <article>
-            <h3>Mayores períodos sin salida</h3>
-            {warehouseSummary.longestWithoutMovement.length === 0 ? <p>Sin datos calculables.</p> : <ul>{warehouseSummary.longestWithoutMovement.map((entry) => <li key={`${entry.code}-${entry.product}`}>{entry.code} · {entry.product}: {entry.days} días.</li>)}</ul>}
-          </article>
-        </div>
-        <small>El resumen describe datos, tendencias y alertas calculadas; no atribuye causas que el sistema no registre.</small>
+        <article className="analysis-ranking"><h3>Obsolescencia · {expiredLots.length} lotes vencidos</h3>{possibleObsolescence.length === 0 ? <p>Ningún producto supera los límites configurados.</p> : <ol>{expiredLots.slice(0, 10).map(({ lot, product }) => <li key={`${lot.productDocumentId}-${lot.id}`}><span>{product?.code} · {product?.name} · Lote {lot.lotNumber}</span><strong>{formatQuantity(lot.quantity)} {lot.unit} · FV {lot.expirationDate}</strong></li>)}{possibleObsolescence.filter((row) => !row.classification.expired).slice(0, Math.max(0, 10 - expiredLots.length)).map((row) => <li key={row.product.id}><span>{row.product.code} · {row.product.name} · Sin lote vencido</span><strong>{formatQuantity(row.product.currentStock ?? null)} {row.product.unit} · {row.daysWithoutMovement ?? 'N/A'} días</strong></li>)}</ol>}</article>
+        <article className="analysis-ranking"><h3>Lotes próximos a vencer en {thresholds.nearExpiryDays} días</h3>{nearExpiryLots.length === 0 ? <p>No hay lotes próximos a vencer.</p> : <ol>{nearExpiryLots.slice(0, 10).map(({ lot, product, days }) => <li key={`${lot.productDocumentId}-${lot.id}`}><span>{product?.code} · {product?.name} · Lote {lot.lotNumber}</span><strong>{formatQuantity(lot.quantity)} {lot.unit} · FV {lot.expirationDate} · {days === 0 ? 'vence hoy' : `${days} días`}</strong></li>)}</ol>}</article>
+        <article className="analysis-ranking"><h3>Pendientes de lote y vencimiento · {pendingLotAssignments.length}</h3>{pendingLotAssignments.length === 0 ? <p>Todos los ingresos están correctamente identificados.</p> : <ol>{pendingLotAssignments.slice(0, 10).map((entry) => <li key={entry.id}><span>{entry.code} · {entry.productName}</span><strong>{entry.assignmentStatus === 'partial' ? `${formatQuantity(entry.pendingQuantity)} de ${formatQuantity(entry.quantity)} ${entry.unit} pendientes` : `${formatQuantity(entry.quantity)} ${entry.unit} · ${entry.assignmentStatus === 'invalid' ? 'Revisar datos' : 'Sin asignar'}`}</strong></li>)}</ol>}</article>
       </section>
 
       <section className="analysis-table-panel">

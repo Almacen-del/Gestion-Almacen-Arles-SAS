@@ -13,7 +13,7 @@ export const DEFAULT_INVENTORY_ANALYSIS_THRESHOLDS: InventoryAnalysisThresholds 
   lowTurnoverAfterDays: 30,
   noMovementAfterDays: 90,
   possibleObsolescenceAfterDays: 180,
-  nearExpiryDays: 30,
+  nearExpiryDays: 60,
 };
 
 const STATUS_LABELS: Record<InventoryClassificationStatus, string> = {
@@ -23,7 +23,7 @@ const STATUS_LABELS: Record<InventoryClassificationStatus, string> = {
   'never-moved': 'Sin movimientos',
   'out-of-stock': 'Sin existencias',
   review: 'Revisar',
-  'possible-obsolescence': 'Posible obsolescencia',
+  'possible-obsolescence': 'Obsolescencia',
   'confirmed-obsolete': 'Obsoleto confirmado',
 };
 
@@ -38,6 +38,17 @@ function dateKeyToUtc(value: string) {
     || date.getUTCDate() !== Number(match[3])
   ) return Number.NaN;
   return result;
+}
+
+function expirationDateKey(value: string) {
+  const normalized = value.trim();
+  const monthMatch = normalized.match(/^(\d{4})-(\d{2})$/);
+  if (!monthMatch) return movementDateKey(normalized);
+  const year = Number(monthMatch[1]);
+  const month = Number(monthMatch[2]);
+  if (month < 1 || month > 12) return '';
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 }
 
 function nonNegativeNumber(value: unknown, fallback: number) {
@@ -77,7 +88,7 @@ export function classifyInventoryAnalysis(
 ): InventoryClassification {
   const thresholds = normalizeInventoryAnalysisThresholds(rawThresholds);
   const expirationKey = analysis.product.expirationDate
-    ? movementDateKey(analysis.product.expirationDate)
+    ? expirationDateKey(analysis.product.expirationDate)
     : '';
   const cutoffUtc = dateKeyToUtc(analysis.period.to);
   const expirationUtc = dateKeyToUtc(expirationKey);
@@ -106,6 +117,16 @@ export function classifyInventoryAnalysis(
       status: 'confirmed-obsolete',
       label: STATUS_LABELS['confirmed-obsolete'],
       reasons: ['El producto tiene una confirmación manual de obsolescencia.'],
+      expired,
+      nearExpiry,
+    };
+  }
+
+  if (expired) {
+    return {
+      status: 'possible-obsolescence',
+      label: STATUS_LABELS['possible-obsolescence'],
+      reasons: ['El producto conserva existencias y su fecha de vencimiento es anterior al corte.'],
       expired,
       nearExpiry,
     };
@@ -141,16 +162,6 @@ export function classifyInventoryAnalysis(
     };
   }
 
-  if (expired) {
-    return {
-      status: 'possible-obsolescence',
-      label: STATUS_LABELS['possible-obsolescence'],
-      reasons: ['El producto conserva existencias y su fecha de vencimiento es anterior al corte.'],
-      expired,
-      nearExpiry,
-    };
-  }
-
   if (
     analysis.daysWithoutMovement !== null
     && analysis.daysWithoutMovement >= thresholds.possibleObsolescenceAfterDays
@@ -158,7 +169,7 @@ export function classifyInventoryAnalysis(
     return {
       status: 'possible-obsolescence',
       label: STATUS_LABELS['possible-obsolescence'],
-      reasons: [`Acumula ${analysis.daysWithoutMovement} días sin salidas y supera el límite configurado de posible obsolescencia.`],
+      reasons: [`Acumula ${analysis.daysWithoutMovement} días sin salidas y supera el límite configurado de obsolescencia.`],
       expired,
       nearExpiry,
     };

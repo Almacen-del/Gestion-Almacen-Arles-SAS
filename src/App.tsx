@@ -79,6 +79,7 @@ import AgrochemicalExpirationModal, {
 } from './ui/AgrochemicalExpirationModal';
 import ValuationEditModal from './ui/ValuationEditModal';
 import type { CurrentValuationRow, ValuationSaveState } from './valuation/models';
+import { calculateEstimatedExitExpense } from './valuation/exitExpense';
 import {
   subscribeEntryStockMovements,
   subscribeEntryValuationRecords,
@@ -123,6 +124,7 @@ import { browserPlatform, exportMovementReportWeb } from './platform/browserPlat
 import {
   agrochemicalLotDocumentId,
   buildAgrochemicalEntryQueue,
+  earliestAvailableLotExpirationByProduct,
   type AgrochemicalLot,
 } from './agrochemicalLots';
 import {
@@ -1271,6 +1273,7 @@ function AppShell({ user }: { user: User }) {
   const loadingMovementPageRef = useRef(false);
   const autoLoadedEmptyMovementScopesRef = useRef(new Set<string>());
   const analysisHistoryLoadAttemptedRef = useRef(false);
+  const valuationHistoryLoadAttemptedRef = useRef(false);
   const savingToolStatusIds = useRef(new Set<string>());
   const canExportMovementReport = browserPlatform.canExportMovementReport;
   const panelSourcesReady = areSourcesServerReady(firestoreSources, PANEL_REQUIRED_SOURCE_KEYS);
@@ -2061,6 +2064,10 @@ function AppShell({ user }: { user: User }) {
       includesOccupied: moduleName === 'TALLER',
     };
   }), [valuationInventory, valuations]);
+  const agrochemicalExpirationByProduct = useMemo(
+    () => earliestAvailableLotExpirationByProduct(agrochemicalLots),
+    [agrochemicalLots],
+  );
   const analysisSourceProducts = useMemo(() => [...inventory, ...aseoInventory, ...tools]
     .filter((item) => !item.id.startsWith('fallback-'))
     .filter((item) => !moduleMatches(item.modulo, 'TALLER'))
@@ -2074,9 +2081,9 @@ function AppShell({ user }: { user: User }) {
       unit: item.unidad,
       location: item.ubicacion,
       currentStock: item.saldo,
-      expirationDate: item.expirationDate,
+      expirationDate: agrochemicalExpirationByProduct.get(item.id) ?? item.expirationDate,
       confirmedObsolete: item.confirmedObsolete,
-    })), [aseoInventory, inventory, tools]);
+    })), [agrochemicalExpirationByProduct, aseoInventory, inventory, tools]);
   const analysisSourceMovements = useMemo(() => movements
     .filter((movement) => !moduleMatches(movement.modulo, 'TALLER'))
     .map((movement) => ({
@@ -2092,6 +2099,11 @@ function AppShell({ user }: { user: User }) {
       stockBefore: movement.stockBefore,
       stockAfter: movement.stockAfter,
     })), [movements]);
+  const estimatedExitExpense = useMemo(() => calculateEstimatedExitExpense(
+    valuationRows,
+    analysisSourceProducts,
+    analysisSourceMovements,
+  ), [analysisSourceMovements, analysisSourceProducts, valuationRows]);
 
   useEffect(() => {
     if (
@@ -2105,6 +2117,18 @@ function AppShell({ user }: { user: User }) {
     analysisHistoryLoadAttemptedRef.current = true;
     void loadCompleteMovementHistory().catch(() => undefined);
   }, [firestoreSources.movements, hasMoreMovements, isAnalysisModule, loadingMoreMovements, online]);
+  useEffect(() => {
+    if (
+      !isValuationModule
+      || valuationHistoryLoadAttemptedRef.current
+      || !hasMoreMovements
+      || loadingMoreMovements
+      || !online
+      || !isServerSourceReady(firestoreSources.movements)
+    ) return;
+    valuationHistoryLoadAttemptedRef.current = true;
+    void loadCompleteMovementHistory().catch(() => undefined);
+  }, [firestoreSources.movements, hasMoreMovements, isValuationModule, loadingMoreMovements, online]);
   const usingTallerFallback = isTallerModule && tools.length === 0 && toolsInventory.length > 0;
   const moduleInventoryBase = useMemo(() => {
     const operationalInventory = inventory.filter((item) => !moduleMatches(item.modulo, 'ASEO'));
@@ -2631,6 +2655,9 @@ function AppShell({ user }: { user: User }) {
             firestoreSources={firestoreSources}
             entryStockMovements={entryStockMovements}
             entryValuationRecords={entryValuationRecords}
+            estimatedExitExpense={estimatedExitExpense}
+            exitHistoryComplete={!hasMoreMovements && isServerSourceReady(firestoreSources.movements)}
+            exitHistoryLoading={loadingMoreMovements}
             onEdit={(valuationId) => {
               const item = valuationInventory.find((entry) => entry.valuationId === valuationId);
               if (item) openValuationModal(item);
@@ -2642,6 +2669,8 @@ function AppShell({ user }: { user: User }) {
           <InventoryAnalysisPanel
             sourceProducts={analysisSourceProducts}
             sourceMovements={analysisSourceMovements}
+            expirationLots={agrochemicalLots}
+            agrochemicalEntries={agrochemicalStockEntries}
             historyComplete={!hasMoreMovements && isServerSourceReady(firestoreSources.movements)}
             loadingHistory={loadingMoreMovements}
             onLoadCompleteHistory={async () => {

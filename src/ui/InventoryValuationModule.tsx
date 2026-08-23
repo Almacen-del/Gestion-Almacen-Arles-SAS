@@ -34,6 +34,7 @@ import type {
   ValuationFilter,
 } from '../valuation/models';
 import type { EntryStockMovement, EntryValuationRecord } from '../valuation/entryValuation';
+import type { EstimatedExitExpense } from '../valuation/exitExpense';
 import {
   EMPTY_FIRESTORE_SOURCE_STATE,
   stateFromSnapshot,
@@ -246,6 +247,9 @@ function CurrentValuationView({
   firestoreSources,
   pendingEntryCount,
   inconsistentEntryCount,
+  estimatedExitExpense,
+  exitHistoryComplete,
+  exitHistoryLoading,
   onEdit,
 }: {
   rows: CurrentValuationRow[];
@@ -256,6 +260,9 @@ function CurrentValuationView({
   firestoreSources: FirestoreSourceStates;
   pendingEntryCount: number;
   inconsistentEntryCount: number;
+  estimatedExitExpense: EstimatedExitExpense;
+  exitHistoryComplete: boolean;
+  exitHistoryLoading: boolean;
   onEdit: (valuationId: string) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -476,6 +483,19 @@ function CurrentValuationView({
                 <small>{entry.valuedCount} con valor de {entry.productCount}</small>
               </button>
             ))}
+          <article className="valuation-exit-expense-card" title="Estimación calculada con el valor unitario promedio actual de cada producto; no reemplaza un costo histórico por salida.">
+            <span>Gasto total estimado de salidas</span>
+            <strong>{exitHistoryComplete ? formatCurrency(estimatedExitExpense.estimatedTotal) : 'Calculando…'}</strong>
+            <small>{exitHistoryComplete
+              ? `${estimatedExitExpense.valuedExitCount} de ${estimatedExitExpense.exitCount} salidas con precio${estimatedExitExpense.unvaluedExitCount + estimatedExitExpense.unresolvedExitCount > 0 ? ` · ${estimatedExitExpense.unvaluedExitCount + estimatedExitExpense.unresolvedExitCount} sin precio, no sumadas` : ''}`
+              : exitHistoryLoading ? 'Cargando el historial completo…' : 'Esperando el historial completo…'}</small>
+            {exitHistoryComplete && estimatedExitExpense.missingValuations.length > 0 && (
+              <details className="valuation-missing-exit-prices">
+                <summary>Ver precios faltantes</summary>
+                <ul>{estimatedExitExpense.missingValuations.map((entry) => <li key={entry.productId}><span>{entry.code} · {entry.product}</span><small>{entry.moduleName} · {entry.exitCount} {entry.exitCount === 1 ? 'salida' : 'salidas'}</small></li>)}</ul>
+              </details>
+            )}
+          </article>
         </div>
       </section>
 
@@ -783,6 +803,9 @@ export default function InventoryValuationModule({
   firestoreSources,
   entryStockMovements,
   entryValuationRecords,
+  estimatedExitExpense,
+  exitHistoryComplete,
+  exitHistoryLoading,
   onEdit,
 }: {
   rows: CurrentValuationRow[];
@@ -795,6 +818,9 @@ export default function InventoryValuationModule({
   firestoreSources: FirestoreSourceStates;
   entryStockMovements: EntryStockMovement[];
   entryValuationRecords: Record<string, EntryValuationRecord>;
+  estimatedExitExpense: EstimatedExitExpense;
+  exitHistoryComplete: boolean;
+  exitHistoryLoading: boolean;
   onEdit: (valuationId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<ValuationTab>('current');
@@ -830,6 +856,9 @@ export default function InventoryValuationModule({
           firestoreSources={firestoreSources}
           pendingEntryCount={pendingEntryCount}
           inconsistentEntryCount={inconsistentEntryCount}
+          estimatedExitExpense={estimatedExitExpense}
+          exitHistoryComplete={exitHistoryComplete}
+          exitHistoryLoading={exitHistoryLoading}
           onEdit={onEdit}
         />
       ) : activeTab === 'entries' ? (

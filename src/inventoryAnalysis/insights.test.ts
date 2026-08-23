@@ -34,10 +34,10 @@ describe('análisis automático basado en datos', () => {
 
   it('diferencia posible obsolescencia de una confirmación', () => {
     const current = row({
-      classification: { status: 'possible-obsolescence', label: 'Posible obsolescencia', reasons: [], expired: false, nearExpiry: false },
+      classification: { status: 'possible-obsolescence', label: 'Obsolescencia', reasons: [], expired: false, nearExpiry: false },
     });
     const insights = buildProductInventoryInsights(current, [], DEFAULT_INVENTORY_ANALYSIS_THRESHOLDS);
-    expect(insights.find((entry) => entry.title === 'Posible obsolescencia')?.message).toContain('no se marcó como obsoleto confirmado');
+    expect(insights.find((entry) => entry.title === 'Obsolescencia')?.message).toContain('no se marcó como obsoleto confirmado');
   });
 
   it('compara conteos contra el período anterior', () => {

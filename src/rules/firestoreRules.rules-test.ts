@@ -158,6 +158,17 @@ describe('isActiveUser en firestore.rules', () => {
       },
     ));
     await assertSucceeds(getDocs(query(collectionGroup(context.firestore(), 'lotes_agroquimicos'))));
+    await assertSucceeds(setDoc(
+      doc(context.firestore(), 'existencias', 'agro-1', 'lotes_agroquimicos', 'LOTE-MES__2028-02'),
+      {
+        producto_id: 'agro-1',
+        numero_lote: 'LOTE-MES',
+        fecha_vencimiento: '2028-02',
+        cantidad_inicial: 1,
+        cantidad_disponible: 1,
+        unidad: 'KG',
+      },
+    ));
   });
 
   it('rechaza lotes negativos, mayores a la cantidad inicial o bajo productos de otro módulo', async () => {

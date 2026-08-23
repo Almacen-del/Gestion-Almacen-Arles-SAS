@@ -17,6 +17,7 @@ Campos del lote:
 - `producto`
 - `numero_lote`
 - `fecha_vencimiento`
+- `precision_vencimiento` (`dia` o `mes`)
 - `fecha_ingreso`
 - `cantidad_inicial`
 - `cantidad_disponible`
@@ -37,6 +38,8 @@ existencias/{productoId}/asignaciones_entradas_agroquimicos/{entradaId}
 ```
 
 Esto evita asignar dos veces una misma cantidad, incluso si dos sesiones intentan guardar simultáneamente. La web no crea la entrada, no cambia el saldo general y no registra una salida.
+
+Cuando la etiqueta solo informa mes y año, `fecha_vencimiento` se guarda como `AAAA-MM`. Para clasificación y FEFO se considera vigente hasta el último día de ese mes, sin inventar un día exacto en la visualización.
 
 ## Regla para la aplicación móvil
 

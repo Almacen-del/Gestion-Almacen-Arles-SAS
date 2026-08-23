@@ -4,6 +4,7 @@ import {
   allocateAgrochemicalExitFefo,
   buildAgrochemicalEntryQueue,
   classifyAgrochemicalLot,
+  earliestAvailableLotExpirationByProduct,
   type AgrochemicalLot,
 } from './agrochemicalLots';
 
@@ -34,6 +35,30 @@ describe('lotes de agroquímicos', () => {
     expect(classifyAgrochemicalLot(lot('A', '2026-08-19', 1), '2026-08-20')).toBe('expired');
     expect(classifyAgrochemicalLot(lot('B', '2026-09-10', 1), '2026-08-20')).toBe('near-expiry');
     expect(classifyAgrochemicalLot(lot('C', '2027-01-01', 1), '2026-08-20')).toBe('valid');
+  });
+
+  it('interpreta un vencimiento mensual hasta el último día del mes', () => {
+    expect(classifyAgrochemicalLot(lot('M', '2026-08', 1), '2026-08-20')).toBe('near-expiry');
+    expect(classifyAgrochemicalLot(lot('M', '2026-08', 1), '2026-09-01')).toBe('expired');
+    expect(agrochemicalLotDocumentId('LOTE MES', '2028-02')).toBe('LOTE-MES__2028-02');
+  });
+
+  it('expone por producto el vencimiento más cercano que todavía tiene existencias', () => {
+    const agotado = lot('agotado', '2025-01-01', 0);
+    const siguiente = lot('siguiente', '2027-02', 3);
+    const anterior = lot('anterior', '2026-12-15', 2);
+    const otroProducto = lot('otro', '2028-01-01', 1);
+    otroProducto.productDocumentId = 'product-2';
+
+    expect(earliestAvailableLotExpirationByProduct([
+      siguiente,
+      agotado,
+      otroProducto,
+      anterior,
+    ])).toEqual(new Map([
+      ['product-1', '2026-12-15'],
+      ['product-2', '2028-01-01'],
+    ]));
   });
 
   it('asigna la salida al vencimiento más cercano sin mezclar los lotes', () => {

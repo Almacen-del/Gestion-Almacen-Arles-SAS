@@ -40,6 +40,10 @@ function analysis(overrides: Partial<InventoryPeriodAnalysis> = {}): InventoryPe
 }
 
 describe('clasificación configurable del inventario', () => {
+  it('usa 60 días como límite predeterminado para próximo vencimiento', () => {
+    expect(DEFAULT_INVENTORY_ANALYSIS_THRESHOLDS.nearExpiryDays).toBe(60);
+  });
+
   it('mantiene normal un producto que no supera los límites', () => {
     expect(classifyInventoryAnalysis(analysis()).status).toBe('normal');
   });
@@ -133,6 +137,37 @@ describe('clasificación configurable del inventario', () => {
     current.product = { ...current.product, expirationDate: '2026-03-01' };
     const result = classifyInventoryAnalysis(current);
     expect(result).toMatchObject({ status: 'possible-obsolescence', expired: true });
+  });
+
+  it('prioriza un vencimiento sobre la falta de movimientos históricos', () => {
+    const current = analysis({
+      quality: 'insufficient',
+      evidence: {
+        movementIds: [],
+        openingAnchorMovementIds: [],
+        entryMovementIds: [],
+        exitMovementIds: [],
+        otherMovementIds: [],
+        lastEntryMovementId: null,
+        lastExitMovementId: null,
+      },
+    });
+    current.product = { ...current.product, expirationDate: '2026-02-28' };
+    expect(classifyInventoryAnalysis(current)).toMatchObject({
+      status: 'possible-obsolescence',
+      expired: true,
+    });
+  });
+
+  it('interpreta el vencimiento sin día como el último día del mes', () => {
+    const current = analysis();
+    current.product = { ...current.product, expirationDate: '2026-03' };
+    expect(classifyInventoryAnalysis(current)).toMatchObject({ expired: false });
+    current.period = { ...current.period, to: '2026-04-01' };
+    expect(classifyInventoryAnalysis(current)).toMatchObject({
+      status: 'possible-obsolescence',
+      expired: true,
+    });
   });
 
   it('detecta próximo vencimiento y conserva la clasificación normal', () => {

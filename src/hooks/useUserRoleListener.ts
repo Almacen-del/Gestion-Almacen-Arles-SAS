@@ -16,6 +16,11 @@ interface UserProfile {
   role?: string;
 }
 
+interface SnapshotMetadataLike {
+  fromCache: boolean;
+  hasPendingWrites: boolean;
+}
+
 const INACTIVE_STATES = ['inactivo', 'desactivado', 'bloqueado', 'suspendido'];
 
 /**
@@ -38,6 +43,7 @@ export function useUserRoleListener(user: User | null | undefined, onUnauthorize
       // Escuchar cambios en el documento del usuario
       unsubscribeRef.current = onSnapshot(
         userDocRef,
+        { includeMetadataChanges: true },
         (snapshot) => {
           if (!snapshot.exists()) {
             Logger.warn('Documento de usuario no encontrado', {
@@ -49,8 +55,10 @@ export function useUserRoleListener(user: User | null | undefined, onUnauthorize
 
           const profile = snapshot.data() as UserProfile;
 
-          // Verificar si el usuario sigue siendo activo
-          if (!isUserActive(profile)) {
+          // Una lectura inicial puede traer desde caché el perfil pendiente que
+          // existía antes de que un administrador activara la cuenta. Solo el
+          // estado confirmado por el servidor puede forzar el cierre de sesión.
+          if (shouldForceLogoutFromUserSnapshot(profile, snapshot.metadata)) {
             handleUserUnauthorized(user.uid);
           }
         },
@@ -110,7 +118,15 @@ export function useUserRoleListener(user: User | null | undefined, onUnauthorize
 /**
  * Verificar si el usuario sigue siendo activo
  */
-function isUserActive(profile: UserProfile): boolean {
+export function shouldForceLogoutFromUserSnapshot(
+  profile: UserProfile,
+  metadata: SnapshotMetadataLike,
+): boolean {
+  if (metadata.fromCache || metadata.hasPendingWrites) return false;
+  return !isUserActive(profile);
+}
+
+export function isUserActive(profile: UserProfile): boolean {
   const allowedRoles = [
     'owner',
     'Owner',

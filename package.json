@@ -23,6 +23,7 @@
     "verify:web": "npm run test && npm run build"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "exceljs": "^4.4.0",
     "firebase": "^12.16.0",
     "lucide-react": "^0.562.0",

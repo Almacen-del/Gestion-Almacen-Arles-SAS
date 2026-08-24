@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Analytics } from '@vercel/analytics/react';
 import ErrorBoundary from './ErrorBoundary';
 import StartupScreen from './StartupScreen';
 import { validateFirebaseEnvironment } from './startupConfig';
@@ -51,6 +52,7 @@ async function bootstrap() {
       <StrictMode>
         <ErrorBoundary onSignOut={closeSessionAndReload}>
           <App />
+          <Analytics />
         </ErrorBoundary>
       </StrictMode>,
     );

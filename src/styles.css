@@ -537,7 +537,7 @@ h2 {
 
 .pending-user-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1.2fr) minmax(100px, 0.9fr) 100px 92px auto;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(100px, 0.9fr) minmax(100px, 0.9fr) 100px 92px auto;
   align-items: end;
   gap: 8px;
   padding: 10px;

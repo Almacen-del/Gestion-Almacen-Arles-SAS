@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeCorporateEmail } from './browserAuth';
+import { isPendingUserProfile, normalizeCorporateEmail } from './browserAuth';
 
 describe('normalizeCorporateEmail', () => {
   it('normalizes valid corporate emails', () => {
@@ -16,5 +16,10 @@ describe('normalizeCorporateEmail', () => {
 
   it('rejects lookalike domains', () => {
     expect(() => normalizeCorporateEmail('usuario@arlessas.com.evil.test')).toThrow('AUTH_CORPORATE_EMAIL_REQUIRED');
+  });
+
+  it('identifica perfiles que todavía esperan aprobación', () => {
+    expect(isPendingUserProfile({ rol: 'pendiente', estado: 'pendiente' })).toBe(true);
+    expect(isPendingUserProfile({ rol: 'operador', estado: 'activo' })).toBe(false);
   });
 });

@@ -113,6 +113,20 @@ describe('isActiveUser en firestore.rules', () => {
     }));
   });
 
+  it('un usuario pendiente puede leer únicamente su propio perfil', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'usuarios', 'pendiente-propio'), {
+        email: 'pendiente@arlessas.com', rol: 'pendiente', activo: false, estado: 'pendiente',
+      });
+      await setDoc(doc(context.firestore(), 'usuarios', 'pendiente-ajeno'), {
+        email: 'otro@arlessas.com', rol: 'pendiente', activo: false, estado: 'pendiente',
+      });
+    });
+    const context = testEnvironment.authenticatedContext('pendiente-propio', { email: 'pendiente@arlessas.com' });
+    await assertSucceeds(getDoc(doc(context.firestore(), 'usuarios', 'pendiente-propio')));
+    await assertFails(getDoc(doc(context.firestore(), 'usuarios', 'pendiente-ajeno')));
+  });
+
   it('rechaza la creación de perfiles pendientes fuera del dominio corporativo', async () => {
     const context = testEnvironment.authenticatedContext('correo-externo', { email: 'correo@gmail.com' });
     await assertFails(setDoc(doc(context.firestore(), 'usuarios', 'correo-externo'), {

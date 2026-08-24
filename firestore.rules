@@ -121,7 +121,9 @@ service cloud.firestore {
     // panel usa esta colección para responsables/reportes. Solo administradores
     // pueden crear, modificar o eliminar perfiles y roles.
     match /usuarios/{uid} {
-      allow read: if isActiveUser();
+      allow get: if isActiveUser()
+        || (signedIn() && request.auth.uid == uid);
+      allow list: if isActiveUser();
       // Una cuenta recién registrada puede crear únicamente su perfil pendiente.
       // La activación y la asignación de rol quedan reservadas a administradores.
       allow create: if hasAdminAccess()

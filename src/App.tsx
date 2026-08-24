@@ -1013,10 +1013,12 @@ function LoginScreen({
   onRegister,
 }: {
   onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (email: string, password: string) => Promise<void>;
+  onRegister: (email: string, password: string, name: string, jobTitle: string) => Promise<void>;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1027,7 +1029,7 @@ function LoginScreen({
     setError('');
     try {
       if (mode === 'register') {
-        await onRegister(email, password);
+        await onRegister(email, password, name, jobTitle);
       } else {
         await onLogin(email, password);
       }
@@ -1036,7 +1038,11 @@ function LoginScreen({
         setError('Solo se aceptan correos corporativos terminados en @arlessas.com.');
       } else if (err instanceof Error && err.message === 'AUTH_REGISTRATION_PENDING') {
         setMode('login');
-        setError('Cuenta creada. Un administrador debe confirmar tu perfil antes de permitir el acceso.');
+        setError('Cuenta pendiente de aprobación. Un administrador debe confirmar tu perfil antes de permitir el acceso.');
+      } else if (err instanceof Error && err.message === 'AUTH_REGISTRATION_PROFILE_FAILED') {
+        setError('No se pudo completar el perfil de la cuenta. Intenta nuevamente; el correo no debería quedar bloqueado.');
+      } else if (err instanceof Error && err.message === 'AUTH_REGISTRATION_DETAILS_REQUIRED') {
+        setError('Escribe el nombre y el cargo para crear la cuenta.');
       } else if (mode === 'register') {
         setError('No pude crear la cuenta. El correo puede ya estar registrado o la contraseña no cumplir los requisitos.');
       } else {
@@ -1067,6 +1073,8 @@ function LoginScreen({
           </p>
         </div>
         <form onSubmit={submit} className="login-form">
+          {mode === 'register' && <label>Nombre completo<input value={name} onChange={(event) => setName(event.target.value)} type="text" autoComplete="name" required /></label>}
+          {mode === 'register' && <label>Cargo<input value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} type="text" autoComplete="organization-title" required /></label>}
           <label>
             Correo
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="nombre@arlessas.com" required />
@@ -1106,10 +1114,11 @@ function PendingUsersPanel({
 }: {
   users: UserProfile[];
   onClose: () => void;
-  onSave: (profile: UserProfile, role: string, name: string, state: string) => Promise<void>;
+  onSave: (profile: UserProfile, role: string, name: string, jobTitle: string, state: string) => Promise<void>;
 }) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
+  const [jobTitles, setJobTitles] = useState<Record<string, string>>({});
   const [selectedStates, setSelectedStates] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState('');
   const [error, setError] = useState('');
@@ -1117,11 +1126,12 @@ function PendingUsersPanel({
   async function save(profile: UserProfile) {
     const role = selectedRoles[profile.id] || 'operador';
     const name = names[profile.id]?.trim() || profile.email || profile.id;
+    const jobTitle = jobTitles[profile.id]?.trim() || profile.cargo || '';
     const state = selectedStates[profile.id] || (profile.estado === 'pendiente' ? 'activo' : profile.estado || 'activo');
     setSavingId(profile.id);
     setError('');
     try {
-      await onSave(profile, role, name, state);
+      await onSave(profile, role, name, jobTitle, state);
     } catch {
       setError(`No se pudo guardar ${profile.email || profile.id}. Verifica los permisos y la conexión.`);
     } finally {
@@ -1170,6 +1180,14 @@ function PendingUsersPanel({
                     value={names[profile.id] ?? profile.nombre ?? ''}
                     onChange={(event) => setNames((current) => ({ ...current, [profile.id]: event.target.value }))}
                     placeholder="Nombre del usuario"
+                  />
+                </label>
+                <label>
+                  Cargo
+                  <input
+                    value={jobTitles[profile.id] ?? profile.cargo ?? ''}
+                    onChange={(event) => setJobTitles((current) => ({ ...current, [profile.id]: event.target.value }))}
+                    placeholder="Cargo del usuario"
                   />
                 </label>
                 <label>
@@ -1593,12 +1611,12 @@ function AppShell({ user }: { user: User }) {
     return Array.from(uniqueProfiles.values()).sort((left, right) => left.email.localeCompare(right.email));
   }, [users]);
 
-  async function saveUserProfile(profile: UserProfile, role: string, name: string, state: string) {
+  async function saveUserProfile(profile: UserProfile, role: string, name: string, jobTitle: string, state: string) {
     const isActive = state === 'activo';
     await updateDoc(doc(db, 'usuarios', profile.id), {
       nombres: name,
       nombre: name,
-      cargo: role,
+      cargo: jobTitle,
       rol: role,
       activo: isActive,
       estado: isActive ? 'activo' : 'inactivo',
@@ -3549,8 +3567,8 @@ export function App() {
   if (!user) {
     return (
       <LoginScreen
-        onLogin={(email, password) => signInWithNormalizedEmail(auth, email, password)}
-        onRegister={(email, password) => createCorporateAccount(auth, db, email, password)}
+        onLogin={(email, password) => signInWithNormalizedEmail(auth, db, email, password)}
+        onRegister={(email, password, name, jobTitle) => createCorporateAccount(auth, db, email, password, name, jobTitle)}
       />
     );
   }

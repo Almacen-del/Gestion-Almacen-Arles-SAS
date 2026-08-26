@@ -145,13 +145,13 @@ describe('actividad y desglose del gasto mensual', () => {
   it('usa títulos breves, orden natural y un solo gasto para salidas compartidas entre lotes', () => {
     expect(formatDestinationLot('Lote 03b - Plateo mecánico')).toBe('Lote 3B');
     expect(formatDestinationLot('COP (Centro de Operaciones)')).toBe('Lote COP');
-    expect(formatDestinationLot(FUEL_ROUTE_DESTINATION)).toBe('Lote Recorrido');
+    expect(formatDestinationLot(FUEL_ROUTE_DESTINATION)).toBe('Lote Plantación');
     expect(formatDestinationLot('Personal')).toBe('Lote Personal');
     const labels = ['10', '2', '1', 'Personal', 'recorrido salida/PLANTACION', 'Sin lote de destino', '03b', '3', '24, 23, 22 y 21', '21, 22, 23 y 24'];
     const raw = buildMonthlyActivity('2026-08', [], labels.map((destinationLot, i) => placeMovement(String(i), { destinationLot })), monthlyCutoff);
     const priced = raw.rows.map(row => ({ ...row, expense: 100 }));
     const grouped = groupMonthlyExpenses(priced, 'lot');
-    expect(grouped.map(group => group.label)).toEqual(['Lote 1', 'Lote 2', 'Lote 3', 'Lote 3B', 'Lote 10', 'Lote 21, 22, 23 y 24', 'Lote Personal', 'Lote Recorrido', 'Sin lote de destino']);
+    expect(grouped.map(group => group.label)).toEqual(['Lote 1', 'Lote 2', 'Lote 3', 'Lote 3B', 'Lote 10', 'Lote 21, 22, 23 y 24', 'Lote Personal', 'Lote Plantación', 'Sin lote de destino']);
     expect(grouped.find(group => group.label === 'Lote 21, 22, 23 y 24')).toMatchObject({ expense: 200 });
     expect(grouped.reduce((sum, group) => sum + group.expense, 0)).toBe(1000);
     expect(grouped.reduce((sum, group) => sum + group.rows.length, 0)).toBe(10);
@@ -187,6 +187,28 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(corrected.personalCount).toBe(1);
     expect(corrected.snapshot.rows[0]).toEqual({ ...saved.rows[0], destinationLot: 'Personal' });
     expect(saved.rows[0].destinationLot).toBe('Piso 4');
+  });
+
+  it('asigna Personal al cargo Supervisor y a las tres salidas ASEO confirmadas de Pedro Vizcaíno', () => {
+    for (const field of ['position', 'labor', 'front', 'observations', 'zone', 'recipientName'] as const) {
+      expect(destinationLotOf(placeMovement(`supervisor-${field}`, { [field]: 'Supervisor de campo' }))).toBe('Personal');
+    }
+    expect(destinationLotOf(placeMovement('no-supervisor', { position: 'Operador' }))).toBe('Sin lote de destino');
+    expect(destinationLotOf(placeMovement('entrada-supervisor', { type: 'Entrada', position: 'Supervisor' }))).toBe('Sin lote de destino');
+
+    for (const code of ['H03-001', 'H03-007', 'H03-004']) {
+      const exit = monthlyMovement(`pedro-${code}`, {
+        module: 'ASEO', code, quantity: 1, occurredAt: '2026-08-10 07:13',
+        recipientName: 'Pedro Vizcaíno', observations: 'Ubicación: Piso 3', labor: 'Salida',
+      });
+      expect(destinationLotOf(exit)).toBe('Personal');
+      const saved = buildMonthlyActivity('2026-08', [], [exit], monthlyCutoff);
+      const old = { ...saved, rows: saved.rows.map(row => ({ ...row, destinationLot: 'Sin lote de destino' })) };
+      expect(recoverMonthlyDestinations(old, []).snapshot.rows[0].destinationLot).toBe('Personal');
+    }
+    expect(destinationLotOf(monthlyMovement('otro-pedro', {
+      module: 'ASEO', code: 'H03-001', quantity: 1, occurredAt: '2026-08-11 07:13', recipientName: 'Pedro Vizcaíno',
+    }))).toBe('Sin lote de destino');
   });
 
   it('asigna Personal a todas las salidas de Consumibles, Dotación y EPP sin modificar el destinatario', () => {
@@ -248,16 +270,16 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(groupMonthlyExpenses(result.snapshot.rows, 'lot').some((group) => group.label.startsWith('Piso'))).toBe(false);
   });
 
-  it('lee los lotes escritos en Labor/Frente y reconoce Recorridos de combustible', () => {
+  it('lee los lotes escritos en Labor/Frente y lleva todo Recorrido de combustible a Plantación', () => {
     expect(destinationLotOf(placeMovement('11', { labor: 'Plateo mecánico lote 11' }))).toBe('11');
     expect(destinationLotOf(placeMovement('17', { front: 'Roto speed lote 17' }))).toBe('17');
-    for (const label of ['Recorridos', ' recorrido ', 'RECORRIDOS.']) {
+    for (const label of ['Recorridos', ' recorrido ', 'RECORRIDOS.', 'Recorrido plantación', 'Motos recorrido plantación']) {
       expect(destinationLotOf(placeMovement('ruta', { module: 'Combustible', labor: label }))).toBe(FUEL_ROUTE_DESTINATION);
     }
     expect(destinationLotOf(placeMovement('frente', { module: 'Combustible', front: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
     expect(destinationLotOf(placeMovement('explicit', { module: 'Combustible', destinationLot: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
-    expect(destinationLotOf(placeMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe('8');
-    expect(destinationLotOf(placeMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe('9');
+    expect(destinationLotOf(placeMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
+    expect(destinationLotOf(placeMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
     expect(destinationLotOf(placeMovement('otro', { module: 'Agroquimicos', labor: 'Recorridos' }))).toBe('Sin lote de destino');
     expect(destinationLotOf(placeMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía' }))).toBe('Sin lote de destino');
   });
@@ -309,7 +331,7 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(result.snapshot.rows[0].destinationLot).toBe(FUEL_ROUTE_DESTINATION);
     expect(JSON.stringify(snapshot)).toBe(before);
     expect(result.snapshot.rows[0]).toEqual({ ...snapshot.rows[0], destinationLot: FUEL_ROUTE_DESTINATION });
-    expect(groupMonthlyExpenses(result.snapshot.rows, 'lot')[0]).toMatchObject({ label: 'Lote Recorrido', expense: snapshot.rows[0].expense });
+    expect(groupMonthlyExpenses(result.snapshot.rows, 'lot')[0]).toMatchObject({ label: 'Lote Plantación', expense: snapshot.rows[0].expense });
     expect(recoverMonthlyDestinations(result.snapshot, [{ ...source, labor: 'Lote 25' }]).recoveredCount).toBe(0);
     expect(recoverMonthlyDestinations(snapshot, []).recoveredCount).toBe(0);
     expect(recoverMonthlyDestinations(snapshot, [{ ...source, labor: 'Recorridos', quantity: 500 }]).recoveredCount).toBe(0);

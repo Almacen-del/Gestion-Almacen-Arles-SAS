@@ -12,6 +12,7 @@ export type MonthlyActivitySource = InventoryAnalysisSourceMovement & {
   zone?: string;
   labor?: string;
   front?: string;
+  position?: string;
   machinery?: string;
   recipientId?: string;
   recipientName?: string;
@@ -47,7 +48,7 @@ export type MonthlyActivitySnapshot = {
 };
 
 export const UNKNOWN_DESTINATION_LOT = 'Sin lote de destino';
-export const FUEL_ROUTE_DESTINATION = 'recorrido salida/PLANTACION';
+export const FUEL_ROUTE_DESTINATION = 'Plantación';
 export const PERSONAL_DESTINATION = 'Personal';
 
 function usesPersonalDestination(moduleName: string) {
@@ -79,8 +80,29 @@ function isConfirmedPersonalAseoExit(id: string, moduleName: string, code: strin
     && movementDateKey(occurredAt) === '2026-08-01';
 }
 
+function isPedroAseoMaintenanceExit(moduleName: string, code: string, quantity: number, occurredAt: string, recipientName: string | undefined) {
+  // User-confirmed deliveries used by Pedro Vizcaíno for air-conditioning maintenance.
+  return normalizeMovementText(moduleName) === 'aseo' && quantity === 1
+    && movementDateKey(occurredAt) === '2026-08-10'
+    && normalizeMovementText(recipientName ?? '') === 'pedro vizcaino'
+    && ['H03001', 'H03007', 'H03004'].includes(code.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+}
+
+function containsSupervisor(values: readonly (string | undefined)[]) {
+  return values.some((value) => /\bsupervisor(?:es)?\b/.test(normalizeMovementText(value ?? '')));
+}
+
+function isSupervisorExit(source: MonthlyActivitySource) {
+  return classifyInventoryMovementType(source.type) === 'exit'
+    && containsSupervisor([
+      source.destinationLot, source.observations, source.zone, source.labor, source.front,
+      source.position, source.recipientId, source.recipientName,
+    ]);
+}
+
 function isRouteLabel(value: string | undefined) {
-  return /^recorridos?[.,;]?$/.test(normalizeMovementText(value ?? ''));
+  const text = normalizeMovementText(value ?? '');
+  return /\brecorridos?\b/.test(text) && !/\b(?:sin|no)\s+recorridos?\b/.test(text);
 }
 
 function cleanDestination(value: string) {
@@ -95,7 +117,7 @@ function canonicalDestination(value: string) {
   if (!key || /^(?:n\/?a|sin (?:lote(?: de destino)?|asignar|destino)|no registrado)$/.test(key)) return '';
   if (/^(?:c\.?o\.?p\.?|centro de operaciones|cop\s*\(centro de operaciones\))$/.test(key)) return 'COP (Centro de Operaciones)';
   if (/^(?:jardin clonal|(?:lote )?ex(?:p)?erimental)$/.test(key)) return key === 'jardin clonal' ? 'Jardín clonal' : 'Experimental';
-  if (/^(?:recorridos?|recorrido salida\s*\/\s*plantacion)$/.test(key)) return FUEL_ROUTE_DESTINATION;
+  if (/\brecorridos?\b/.test(key) || key === 'plantacion') return FUEL_ROUTE_DESTINATION;
   // Keep the lot identifiers, not the agricultural task or a trailing description.
   // A joint delivery stays in ONE joint group: never duplicate/split its cost.
   const codes = /^(\d+[a-z]?(?:\s*(?:,|\/|&|\by\b)\s*(?:lotes?\s+)?\d+[a-z]?)*)(?=$|[\s;:.(\-])/i.exec(clean)?.[1];
@@ -139,20 +161,22 @@ export function destinationLotOf(source: MonthlyActivitySource) {
   if (classifyInventoryMovementType(source.type) === 'exit'
     && (usesPersonalDestination(source.module)
       || isPersonalAseoProduct(source.module, source.code ?? '')
-      || isConfirmedPersonalAseoExit(source.id, source.module, source.code ?? '', source.quantity, source.occurredAt))) return PERSONAL_DESTINATION;
+      || isConfirmedPersonalAseoExit(source.id, source.module, source.code ?? '', source.quantity, source.occurredAt)
+      || isPedroAseoMaintenanceExit(source.module, source.code ?? '', source.quantity, source.occurredAt, source.recipientName)
+      || isSupervisorExit(source))) return PERSONAL_DESTINATION;
   if (isConfirmedCopFuelWork(source)) return 'COP (Centro de Operaciones)';
   const readDestination = (value: string) => isStorageFloorDestination(source.module, value) ? '' : canonicalDestination(value);
   const explicit = readDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
   const fuelRoute = normalizeMovementText(source.module) === 'combustible'
-    && (isRouteLabel(explicit) || destinationTexts.some(isRouteLabel));
+    && (isRouteLabel(source.destinationLot) || destinationTexts.some(isRouteLabel));
+  if (fuelRoute) return FUEL_ROUTE_DESTINATION;
   // El lote de fabricación y los lotes FEFO no son destinos del consumo.
   const labelled = destinationTexts.flatMap((text) => {
     const matches = (text ?? '').matchAll(/(?:\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))|\b(?:destino|lugar|ubicaci[oó]n|zona)\s*[:=#]\s*)([^;|\n·]+)/gi);
     return [...matches].map((match) => readDestination(match[1])).filter(Boolean);
   })[0];
-  const value = explicit || labelled || namedDestination(destinationTexts) || (fuelRoute ? FUEL_ROUTE_DESTINATION : '');
-  if (fuelRoute && isRouteLabel(value)) return FUEL_ROUTE_DESTINATION;
+  const value = explicit || labelled || namedDestination(destinationTexts);
   return value || UNKNOWN_DESTINATION_LOT;
 }
 
@@ -178,7 +202,10 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
     if (row.kind !== 'exit') return row;
     if (usesPersonalDestination(row.moduleName)
       || isPersonalAseoProduct(row.moduleName, row.code)
-      || isConfirmedPersonalAseoExit(row.id, row.moduleName, row.code, row.quantity, row.occurredAt)) {
+      || isConfirmedPersonalAseoExit(row.id, row.moduleName, row.code, row.quantity, row.occurredAt)
+      || isPedroAseoMaintenanceExit(row.moduleName, row.code, row.quantity, row.occurredAt, row.recipientName)
+      || containsSupervisor([row.destinationLot, row.recipientId, row.recipientName])
+      || (sameMovement && isSupervisorExit(source))) {
       if (row.destinationLot === PERSONAL_DESTINATION) return row;
       personalCount += 1;
       return { ...row, destinationLot: PERSONAL_DESTINATION };
@@ -186,7 +213,10 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
     const storageFloor = isStorageFloorDestination(row.moduleName, row.destinationLot);
     // Explicit user correction of the 2026-08-19 Roto speed exit. Read its current
     // destination for this view, leaving the saved cut unchanged.
-    const confirmedSourceCorrection = sameMovement && (row.id === '1TP0IxcXpmaG0OmKAUT1' || isConfirmedCopFuelWork(source));
+    const confirmedSourceCorrection = sameMovement && (row.id === '1TP0IxcXpmaG0OmKAUT1'
+      || isConfirmedCopFuelWork(source)
+      || (normalizeMovementText(source.module) === 'combustible'
+        && [source.destinationLot, source.observations, source.zone, source.labor, source.front].some(isRouteLabel)));
     if (!storageFloor && !confirmedSourceCorrection && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) return row;
     const destinationLot = sameMovement ? destinationLotOf(source) : UNKNOWN_DESTINATION_LOT;
     if (destinationLot === UNKNOWN_DESTINATION_LOT && !storageFloor) return row;
@@ -310,8 +340,7 @@ export function isPersonnelExpense(row: MonthlyActivityRow) {
 export function formatDestinationLot(value: string) {
   const canonical = canonicalDestination(value);
   if (!canonical || canonical === UNKNOWN_DESTINATION_LOT) return UNKNOWN_DESTINATION_LOT;
-  const short = canonical === FUEL_ROUTE_DESTINATION ? 'Recorrido'
-    : canonical === 'COP (Centro de Operaciones)' ? 'COP' : canonical;
+  const short = canonical === 'COP (Centro de Operaciones)' ? 'COP' : canonical;
   return `Lote ${short}`;
 }
 

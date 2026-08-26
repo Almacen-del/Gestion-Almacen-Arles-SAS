@@ -51,23 +51,56 @@ function isRouteLabel(value: string | undefined) {
   return /^recorridos?[.,;]?$/.test(normalizeMovementText(value ?? ''));
 }
 
+function cleanDestination(value: string) {
+  return value.split(/\s+\b(?:responsable|fecha|cargo|registro|hora)\b\s*:?/i)[0]
+    .split(/\s+\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i)[0]
+    .replace(/^lotes?\b\s*[:=#]?\s*/i, '').replace(/\s+/g, ' ').replace(/[.,;]+$/, '').trim();
+}
+
+function canonicalDestination(value: string) {
+  const clean = cleanDestination(value);
+  const key = normalizeMovementText(clean);
+  if (!key || /^(?:n\/?a|sin (?:lote(?: de destino)?|asignar|destino)|no registrado)$/.test(key)) return '';
+  if (/^(?:c\.?o\.?p\.?|centro de operaciones|cop\s*\(centro de operaciones\))$/.test(key)) return 'COP (Centro de Operaciones)';
+  return ({ taller: 'Taller', cocina: 'Cocina', comedor: 'Comedor' } as Record<string, string>)[key] || clean;
+}
+
+function namedDestination(texts: readonly (string | undefined)[]) {
+  const places = new Set<string>();
+  let qualifiedPlace = false;
+  for (const text of texts) {
+    const normalized = normalizeMovementText(text ?? '');
+    // A named place is not an amount in COP or a negated/origin reference.
+    if (/\b(?:sin|no|desde|origen)\b/.test(normalized)
+      || /(?:\d[\d.,\s]*\s*cop\b|\bcop\s*\$?\s*\d)/.test(normalized)) continue;
+    for (const match of normalized.matchAll(/\b(?:centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor)\b/g)) {
+      const name = canonicalDestination(match[0]);
+      // Preserve qualified locations; do not merge Taller 1 and Taller 2.
+      const suffix = normalized.slice((match.index ?? 0) + match[0].length).trim();
+      if (/^(?:\d|norte\b|sur\b|este\b|oeste\b|principal\b|auxiliar\b)/.test(suffix)) {
+        qualifiedPlace = true;
+        continue;
+      }
+      places.add(name);
+    }
+  }
+  return !qualifiedPlace && places.size === 1 ? [...places][0] : '';
+}
+
 export function destinationLotOf(source: MonthlyActivitySource) {
-  const explicit = source.destinationLot?.trim();
+  const explicit = canonicalDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
   const fuelRoute = normalizeMovementText(source.module) === 'combustible'
     && (isRouteLabel(explicit) || destinationTexts.some(isRouteLabel));
   // El lote de fabricación y los lotes FEFO no son destinos del consumo.
   const labelled = destinationTexts.flatMap((text) => {
-    const match = /\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))([^;|\n·]+)/i.exec(text ?? '');
-    return match ? [match[1]
-      .split(/\s+\b(?:responsable|fecha|cargo|registro|hora)\b\s*:?/i)[0]
-      .split(/\s+\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i)[0]
-      .trim()] : [];
+    const match = /(?:\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))|\b(?:destino|lugar|ubicaci[oó]n|zona)\s*[:=#]\s*)([^;|\n·]+)/i.exec(text ?? '');
+    const value = match ? canonicalDestination(match[1]) : '';
+    return value ? [value] : [];
   })[0];
-  const value = (explicit || labelled || (fuelRoute ? FUEL_ROUTE_DESTINATION : '')).replace(/^lotes?\s*[:=#]?\s*/i, '').replace(/\s+/g, ' ').replace(/[.,;]+$/, '').trim();
+  const value = explicit || labelled || namedDestination(destinationTexts) || (fuelRoute ? FUEL_ROUTE_DESTINATION : '');
   if (fuelRoute && isRouteLabel(value)) return FUEL_ROUTE_DESTINATION;
-  return !value || /^(?:n\/?a|sin (?:lote|asignar)|no registrado)$/i.test(value)
-    ? UNKNOWN_DESTINATION_LOT : value;
+  return value || UNKNOWN_DESTINATION_LOT;
 }
 
 // Display-only recovery for earlier cuts: never replace a known destination or

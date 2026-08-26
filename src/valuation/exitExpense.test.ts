@@ -97,7 +97,44 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(destinationLotOf(monthlyMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe('8');
     expect(destinationLotOf(monthlyMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe('9');
     expect(destinationLotOf(monthlyMovement('otro', { module: 'EPP', labor: 'Recorridos' }))).toBe('Sin lote de destino');
-    expect(destinationLotOf(monthlyMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía COP' }))).toBe('Sin lote de destino');
+    expect(destinationLotOf(monthlyMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía' }))).toBe('Sin lote de destino');
+  });
+
+  it('reconoce lugares en Labor/Frente, zona y notas y unifica las variantes de COP', () => {
+    const cases = [
+      ['Energía COP', 'COP (Centro de Operaciones)'], ['centro de operaciones', 'COP (Centro de Operaciones)'],
+      ['COP (Centro de Operaciones)', 'COP (Centro de Operaciones)'], ['Energía C.O.P.', 'COP (Centro de Operaciones)'],
+      ['Trabajo en taller', 'Taller'], ['COCINA', 'Cocina'], ['Limpieza comedor', 'Comedor'],
+      ['Destino: Bodega norte; Responsable: Luis', 'Bodega norte'], ['Lugar: Vivero principal', 'Vivero principal'],
+      ['Ubicación: Portería', 'Portería'], ['Zona: Campamento', 'Campamento'], ['Lote: Las Palmas', 'Las Palmas'],
+    ];
+    for (const [text, expected] of cases) {
+      for (const field of ['labor', 'front', 'zone', 'observations'] as const) {
+        expect(destinationLotOf(monthlyMovement('lugar', { [field]: text }))).toBe(expected);
+      }
+    }
+    expect(destinationLotOf(monthlyMovement('directo', { destinationLot: 'COP', labor: 'Cocina' }))).toBe('COP (Centro de Operaciones)');
+    expect(destinationLotOf(monthlyMovement('numerado', { labor: 'Energía COP', zone: 'Lote 17' }))).toBe('17');
+    expect(destinationLotOf(monthlyMovement('preciso', { observations: 'Destino: Taller 2', labor: 'Taller' }))).toBe('Taller 2');
+  });
+
+  it('no convierte labores genéricas, importes, negaciones ni destinos ambiguos en lugares', () => {
+    for (const text of ['Plateo mecánico', 'Energía', '20.000 COP', 'COP 20000', 'Sin cocina', 'Transporte desde taller', 'taller y cocina', 'Taller 2', 'Taller 2 y cocina', 'copias']) {
+      expect(destinationLotOf(monthlyMovement('no-lugar', { labor: text }))).toBe('Sin lote de destino');
+    }
+    expect(destinationLotOf(monthlyMovement('ambiguo', { labor: 'Taller', front: 'Comedor' }))).toBe('Sin lote de destino');
+  });
+
+  it('agrupa COP y Centro de Operaciones juntos y recupera lugares sin modificar el corte', () => {
+    const sources = [monthlyMovement('cop'), monthlyMovement('centro'), monthlyMovement('cocina')];
+    const original = buildMonthlyActivity('2026-08', rows, sources, monthlyCutoff);
+    const recovered = recoverMonthlyDestinations(original, sources.map((source, index) => ({ ...source, labor: ['Energía COP', 'Centro de Operaciones', 'Cocina'][index] })));
+    expect(recovered.recoveredCount).toBe(3);
+    expect(groupMonthlyExpenses(recovered.snapshot.rows, 'lot').map(({ label, expense }) => ({ label, expense }))).toEqual([
+      { label: 'COP (Centro de Operaciones)', expense: 10000 }, { label: 'Cocina', expense: 5000 },
+    ]);
+    expect(original.rows.every((row) => row.destinationLot === 'Sin lote de destino')).toBe(true);
+    expect(summarizeMonthlyActivity(recovered.snapshot.rows).estimatedExpense).toBe(summarizeMonthlyActivity(original.rows).estimatedExpense);
   });
 
   it('recupera el destino de cortes antiguos sin alterar importes, destinos conocidos ni originales', () => {

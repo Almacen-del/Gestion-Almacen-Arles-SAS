@@ -1,4 +1,5 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { useUserRoleListener } from './hooks/useUserRoleListener';
 
 import {
@@ -3582,5 +3583,10 @@ export function App() {
     );
   }
 
-  return <AppShell key={`${firebaseProjectId}:${user.uid}`} user={user} />;
+  return (
+    <>
+      <AppShell key={`${firebaseProjectId}:${user.uid}`} user={user} />
+      <Analytics />
+    </>
+  );
 }

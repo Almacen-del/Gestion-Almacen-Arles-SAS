@@ -2956,6 +2956,50 @@ tbody tr:hover {
   gap: 8px;
 }
 
+.valuation-close-blockers > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.valuation-blocker-resolve {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #c88416;
+  border-radius: 8px;
+  color: #6f4300;
+  background: white;
+  font-weight: 800;
+}
+
+.valuation-resolution-modal {
+  width: min(610px, calc(100vw - 32px));
+}
+
+.valuation-resolution-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 20px;
+  overflow: auto;
+  background: #f8fbf7;
+}
+
+.valuation-resolution-body > p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.valuation-resolution-body > ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 14px 14px 14px 32px;
+  border: 1px solid #e8c477;
+  border-radius: 9px;
+  color: #764804;
+  background: #fff9eb;
+}
+
 .monthly-activity { display: grid; gap: 14px; min-width: 0; }
 .monthly-activity-export-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .monthly-activity-export-row .tool-button { flex: 0 0 auto; }

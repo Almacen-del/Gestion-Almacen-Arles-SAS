@@ -263,6 +263,8 @@ function CurrentValuationView({
   exitHistoryComplete,
   exitHistoryLoading,
   onEdit,
+  onOpenEntries,
+  onOpenHistory,
 }: {
   monthlyActivitySources: readonly MonthlyActivitySource[];
   rows: CurrentValuationRow[];
@@ -277,11 +279,14 @@ function CurrentValuationView({
   exitHistoryComplete: boolean;
   exitHistoryLoading: boolean;
   onEdit: (valuationId: string) => void;
+  onOpenEntries: () => void;
+  onOpenHistory: () => void;
 }) {
   const [search, setSearch] = useState('');
   const [moduleFilter, setModuleFilter] = useState('all');
   const [valueFilter, setValueFilter] = useState<ValuationFilter>('all');
   const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
   const [confirmationCutoffAt, setConfirmationCutoffAt] = useState<Date | null>(null);
   const [saveState, setSaveState] = useState<MonthlySaveState>('idle');
   const [saveMessage, setSaveMessage] = useState('');
@@ -308,6 +313,11 @@ function CurrentValuationView({
     existingCloseCreatorUid: existingClose?.createdByUid ?? '',
     userUid: user.uid,
   });
+  const blockerText = eligibility.reasons.join(' ').toLocaleLowerCase('es-CO');
+  const canRefreshBlockers = /caché|conexión|sincronización|cargar|escrituras pendientes|historial de movimientos/.test(blockerText);
+  const canOpenExistingClose = /cierre completo|cierre en proceso/.test(blockerText);
+  const canReviewEntries = /entrada\(s\).*pendientes|entrada\(s\).*inconsistentes/.test(blockerText);
+  const canShowUnvalued = /cantidad positiva y sin valor unitario/.test(blockerText);
 
   useEffect(() => subscribeMonthlyValuationPeriod(
     period,
@@ -437,6 +447,29 @@ function CurrentValuationView({
             <strong>El cierre mensual está bloqueado</strong>
             <ul>{eligibility.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
           </div>
+          <button type="button" className="valuation-blocker-resolve" onClick={() => setResolutionOpen(true)}>Resolver</button>
+        </div>
+      )}
+
+      {resolutionOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setResolutionOpen(false)}>
+          <section className="entries-modal valuation-resolution-modal" role="dialog" aria-modal="true" aria-label="Resolver bloqueo del cierre mensual" onClick={(event) => event.stopPropagation()}>
+            <header className="evidence-header">
+              <div><p className="eyebrow">Asistente de cierre</p><h2>Resolver bloqueo mensual</h2></div>
+              <button className="icon-button" type="button" title="Cerrar" onClick={() => setResolutionOpen(false)}><X size={18} /></button>
+            </header>
+            <div className="valuation-resolution-body">
+              <p>Elige una acción segura. El asistente nunca forzará ni duplicará un cierre.</p>
+              <ul>{eligibility.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+              <div className="valuation-modal-actions">
+                {canShowUnvalued && <button type="button" onClick={() => { setValueFilter('unvalued'); setResolutionOpen(false); }}>Mostrar productos sin valor</button>}
+                {canReviewEntries && <button type="button" onClick={() => { setResolutionOpen(false); onOpenEntries(); }}>Revisar entradas</button>}
+                {canOpenExistingClose && <button type="button" onClick={() => { setResolutionOpen(false); onOpenHistory(); }}>Ver cierre existente</button>}
+                {canRefreshBlockers && <button type="button" className="tool-button" onClick={() => window.location.reload()}>Actualizar datos</button>}
+                <button type="button" onClick={() => setResolutionOpen(false)}>Cancelar</button>
+              </div>
+            </div>
+          </section>
         </div>
       )}
 
@@ -889,6 +922,8 @@ export default function InventoryValuationModule({
           exitHistoryComplete={exitHistoryComplete}
           exitHistoryLoading={exitHistoryLoading}
           onEdit={onEdit}
+          onOpenEntries={() => setActiveTab('entries')}
+          onOpenHistory={() => setActiveTab('history')}
         />
       ) : activeTab === 'entries' ? (
         <PendingEntryValuations

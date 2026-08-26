@@ -39,10 +39,7 @@ function filaMovimiento(fila: FilaMovimientoExcel): FilaReporte {
     nombre: nombreConReferencia(fila), cantidad: fila.cantidad,
     entrada: fila.cantidad_entrada, salida: fila.cantidad_salida,
     fechaIngreso: fila.fecha_ingreso, fechaSalida: fila.fecha_salida,
-    observaciones: [
-      fila.observacion,
-      !fila.fecha_ingreso && !fila.fecha_salida ? `Movimiento: ${fila.tipo_movimiento}` : '',
-    ].filter(Boolean).join('\n'),
+    observaciones: fila.observacion,
     unidad: fila.unidad, lotes: fila.lotes,
   };
 }
@@ -52,10 +49,7 @@ function filaConsolidada(fila: FilaConsolidadoExcel): FilaReporte {
     nombre: nombreConReferencia(fila), cantidad: fila.saldo_actual,
     entrada: fila.total_entradas, salida: fila.total_salidas,
     fechaIngreso: fila.fecha_ingreso, fechaSalida: fila.fecha_salida,
-    observaciones: [
-      fila.observacion,
-      fila.saldo_actual === null ? 'Cantidad disponible sin vínculo con el inventario actual.' : '',
-    ].filter(Boolean).join('\n'),
+    observaciones: fila.observacion,
     unidad: fila.unidad, lotes: fila.lotes,
   };
 }

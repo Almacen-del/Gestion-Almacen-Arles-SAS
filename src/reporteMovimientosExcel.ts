@@ -307,6 +307,36 @@ function responsableMovimiento(movimiento: MovimientoParaReporte, usuarios: Usua
   return [candidato, movimiento.cargo].filter(Boolean).join(' - ') || 'Sin responsable';
 }
 
+function campoObservacion(texto: string, campo: 'lote' | 'responsable') {
+  // Recuperar solo campos explícitos; no copiar notas de migración ni deducir destinos.
+  const coincidencia = new RegExp(`\\b${campo}(?:\\s*[:=#]\\s*|\\s+(?:n[°º]\\.?\\s*)?)([^;|\\n·]+)`, 'i').exec(texto);
+  const valor = coincidencia?.[1] ?? '';
+  return (campo === 'lote' ? valor.replace(/^lote\s+/i, '') : valor)
+    .split(/\s*\.?\s*\b(?:registro\s+hist[oó]rico|horas?\s+no\s+suministrad[ao]s?|lote|responsable|fecha|cargo|observaciones)\b\s*:?/i)[0]
+    .replace(/[\s.,:-]+$/, '').trim();
+}
+
+function observacionBreve(
+  movimiento: MovimientoParaReporte,
+  usuarios: UsuarioLookup,
+  lotes: LoteMovimientoReporte[],
+) {
+  const lote = campoObservacion(movimiento.observaciones, 'lote')
+    || campoObservacion(movimiento.zona || '', 'lote')
+    || movimiento.lote?.trim()
+    || [...new Set(lotes.map((item) => item.numero).filter(Boolean))].join(', ');
+  const candidato = (movimiento.solicitante
+    || campoObservacion(movimiento.observaciones, 'responsable')
+    || movimiento.responsableEntrega || movimiento.usuario || '').trim();
+  const perfil = usuarios[candidato];
+  const responsable = (perfil?.nombre || perfil?.email || candidato).replace(/\s+/g, ' ').trim();
+  const conocido = (valor: string | undefined) => valor && !/^(?:sin (?:responsable|lote|asignar)|no (?:suministrad[ao]|registrad[ao])|n\/?a)$/i.test(valor);
+  return [
+    conocido(lote) ? `Lote: ${lote}` : '',
+    conocido(responsable) ? `Resp.: ${responsable}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
 function crearFilaMovimiento(
   movimiento: MovimientoParaReporte,
   categoria: CategoriaMovimiento,
@@ -335,7 +365,7 @@ function crearFilaMovimiento(
     saldo_nuevo: saldoNuevo,
     estado_conciliacion: estadoConciliacion,
     responsable: responsableMovimiento(movimiento, usuarios),
-    observacion: movimiento.observaciones || '',
+    observacion: observacionBreve(movimiento, usuarios, lotes),
     documento_soporte: movimiento.fotoUrl || '',
     labor: movimiento.labor || movimiento.frente || '',
     zona: movimiento.zona || '',
@@ -581,7 +611,7 @@ function conciliarCategoria(
     consolidado.push({
       fecha_ingreso: visiblesDelGrupo.filter((movimiento) => esEntrada(movimiento, categoria.moduleName, categoria.submodulo)).at(-1)?.fecha || '',
       fecha_salida: visiblesDelGrupo.filter((movimiento) => esSalida(movimiento, categoria.moduleName, categoria.submodulo)).at(-1)?.fecha || '',
-      observacion: [...new Set(visiblesDelGrupo.map((movimiento) => movimiento.observaciones).filter(Boolean))].join('\n'),
+      observacion: [...new Set(visiblesDelGrupo.map((movimiento) => filasPorMovimiento.get(movimiento.id)?.observacion).filter(Boolean))].join('\n'),
       lotes: coincideModulo(categoria.moduleName, 'Agroquimicos') && grupo.inventario
         ? lotes.filter((lote) => lote.productDocumentId === grupo.inventario?.id && lote.quantity > 0)
           .map((lote) => ({ numero: lote.lotNumber, vencimiento: lote.expirationDate, cantidad: lote.quantity }))

@@ -13,7 +13,7 @@ function movimiento(overrides: Partial<MovimientoParaReporte> = {}): MovimientoP
     id: 'entrada', modulo: 'Agroquimicos', tipo: 'Entrada', codigo: 'FER001',
     descripcion: 'Fertilizante de prueba', referencia: 'Presentación 50 kg', cantidad: 50000,
     unidad: 'GRAMO', fecha: '2026-08-20T01:00:00.000Z', solicitante: '', cargo: '', usuario: '',
-    observaciones: 'Recepción verificada. Datos ficticios para prueba.', fotoUrl: '', productDocumentId: 'producto',
+    observaciones: 'Registro histórico. Lote: 28; Responsable: Juan Pérez; Hora no suministrada.', fotoUrl: '', productDocumentId: 'producto',
     ...overrides,
   };
 }
@@ -47,6 +47,28 @@ async function exportar(
 }
 
 describe('Excel uniforme de los módulos', () => {
+  it('solo exporta lote y responsable, sin notas históricas, horas ni cargos', async () => {
+    const entrada = movimiento({ solicitante: 'Ana Pérez', cargo: 'Operadora' });
+    const salida = movimiento({ id: 'salida', tipo: 'Salida', solicitante: 'Ana Pérez', cantidad: 1000 });
+    const { wb } = await exportar('Agroquimicos', [entrada, salida]);
+    for (const sheet of wb.worksheets) {
+      expect(sheet.getCell('G8').value).toBe('Lote: 28 · Resp.: Ana Pérez');
+      expect(sheet.getCell('G8').text).not.toMatch(/histórico|hora|Operadora/i);
+    }
+    expect(entrada.observaciones).toContain('Registro histórico');
+  });
+
+  it('recupera campos de notas antiguas y no añade mensajes por datos faltantes', async () => {
+    const { wb } = await exportar('Agroquimicos', [movimiento()]);
+    expect(wb.getWorksheet('Entradas')!.getCell('G8').value).toBe('Lote: 28 · Resp.: Juan Pérez');
+    const sinDatos = await exportar('Agroquimicos', [movimiento({ observaciones: 'Registro histórico. Hora no suministrada.' })]);
+    expect(sinDatos.wb.getWorksheet('Entradas')!.getCell('G8').text).toBe('');
+    const zona = await exportar('Agroquimicos', [movimiento({ observaciones: '', zona: 'Lote 14', responsableEntrega: 'Carlos Ruiz' })]);
+    expect(zona.wb.getWorksheet('Entradas')!.getCell('G8').value).toBe('Lote: 14 · Resp.: Carlos Ruiz');
+    const etiquetas = await exportar('Agroquimicos', [movimiento({ observaciones: 'Lote:Lote 28. Responsable:Juan Pérez. Registro histórico. Hora no suministrada.' })]);
+    expect(etiquetas.wb.getWorksheet('Entradas')!.getCell('G8').value).toBe('Lote: 28 · Resp.: Juan Pérez');
+  });
+
   it.each(modules.slice(2))('exporta %s con las columnas exactas y el mismo estilo en todas las hojas', async (modulo) => {
     const { wb } = await exportar(modulo);
     const esperadas = modulo === 'Agroquimicos' ? [...columnas, 'Lote', 'Fecha de vencimiento'] : columnas;

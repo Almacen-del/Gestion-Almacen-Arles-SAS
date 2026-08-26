@@ -2956,6 +2956,59 @@ tbody tr:hover {
   gap: 8px;
 }
 
+.entry-valuations-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.entry-valuations-controls,
+.entry-valuations-controls label,
+.entry-valuations-sort {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.entry-valuations-controls {
+  justify-content: flex-end;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.entry-valuations-controls select,
+.entry-valuations-sort button {
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--green-900);
+  background: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.entry-valuations-sort button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.entry-valuations-sort button[aria-pressed="true"] {
+  color: white;
+  border-color: var(--green-700);
+  background: var(--green-700);
+}
+
+.entry-valuations-controls select:focus-visible,
+.entry-valuations-sort button:focus-visible {
+  outline: 2px solid var(--green-700);
+  outline-offset: 2px;
+}
+
 .entry-valuations-counters span,
 .entry-status {
   display: inline-flex;
@@ -3084,7 +3137,8 @@ tbody tr:hover {
     flex-direction: column;
   }
 
-  .entry-valuations-counters {
+  .entry-valuations-counters,
+  .entry-valuations-controls {
     justify-content: flex-start;
   }
 

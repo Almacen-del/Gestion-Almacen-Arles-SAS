@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import type { User } from 'firebase/auth';
-import { AlertTriangle, CheckCircle2, Clock3, Save, WifiOff } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Clock3, Save, WifiOff } from 'lucide-react';
 import { moduleAccent } from '../theme';
 import {
   DuplicateEntryValuationError,
@@ -12,8 +12,11 @@ import {
 } from '../valuation/entryValuation';
 import {
   calculateWeightedAverage,
+  filterEntryValuations,
   MissingBaseAverageError,
   sequenceEntryValuations,
+  type EntryValuationStatusFilter,
+  type EntryValuationSortDirection,
   type SequencedEntry,
 } from '../valuation/entryValuationMath';
 
@@ -112,6 +115,8 @@ export default function PendingEntryValuations({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState('');
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [statusFilter, setStatusFilter] = useState<EntryValuationStatusFilter>('all');
+  const [sortDirection, setSortDirection] = useState<EntryValuationSortDirection>('asc');
 
   const valuedMovementIds = useMemo(() => new Set(Object.keys(records)), [records]);
   const sequencedEntries = useMemo(
@@ -120,6 +125,10 @@ export default function PendingEntryValuations({
   );
   const pendingCount = sequencedEntries.filter((entry) => !entry.alreadyValued).length;
   const valuedCount = sequencedEntries.length - pendingCount;
+  const visibleEntries = useMemo(
+    () => filterEntryValuations(sequencedEntries, statusFilter, sortDirection),
+    [sequencedEntries, statusFilter, sortDirection],
+  );
 
   async function save(row: EntryRow) {
     const draft = drafts[row.id] ?? '';
@@ -169,9 +178,34 @@ export default function PendingEntryValuations({
           <h2>Entradas por valorar</h2>
           <p>Solo aparecen movimientos nuevos marcados como <code>entrada_stock</code>.</p>
         </div>
-        <div className="entry-valuations-counters" aria-label="Resumen de estados">
-          <span className="pending"><Clock3 size={16} /> {pendingCount} pendientes</span>
-          <span className="valued"><CheckCircle2 size={16} /> {valuedCount} valoradas</span>
+        <div className="entry-valuations-actions">
+          <div className="entry-valuations-counters" aria-label="Resumen de estados">
+            <span className="pending"><Clock3 size={16} /> {pendingCount} pendientes</span>
+            <span className="valued"><CheckCircle2 size={16} /> {valuedCount} valoradas</span>
+          </div>
+          <div className="entry-valuations-controls">
+            <label>
+              Estado
+              <select
+                aria-label="Filtrar entradas por estado"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as EntryValuationStatusFilter)}
+              >
+                <option value="all">Todas</option>
+                <option value="pending">Pendiente</option>
+                <option value="valued">Valorada</option>
+              </select>
+            </label>
+            <div className="entry-valuations-sort" role="group" aria-label="Ordenar entradas por fecha">
+              <span>Fecha</span>
+              <button type="button" aria-label="Fecha ascendente" title="Ascendente: más antiguas primero" aria-pressed={sortDirection === 'asc'} onClick={() => setSortDirection('asc')}>
+                <ArrowUp size={14} aria-hidden="true" /> Asc.
+              </button>
+              <button type="button" aria-label="Fecha descendente" title="Descendente: más recientes primero" aria-pressed={sortDirection === 'desc'} onClick={() => setSortDirection('desc')}>
+                <ArrowDown size={14} aria-hidden="true" /> Desc.
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -199,7 +233,7 @@ export default function PendingEntryValuations({
               </tr>
             </thead>
             <tbody>
-              {sequencedEntries.map((row) => {
+              {visibleEntries.map((row) => {
                 const record = records[row.id];
                 const draft = drafts[row.id] ?? '';
                 const calculation = calculationForRow({ row, record, draft, currentAverages, currentValuationIds });
@@ -263,8 +297,8 @@ export default function PendingEntryValuations({
                   </tr>
                 );
               })}
-              {sequencedEntries.length === 0 && (
-                <tr><td colSpan={13} className="empty-cell">No hay movimientos entrada_stock para valorar.</td></tr>
+              {visibleEntries.length === 0 && (
+                <tr><td colSpan={13} className="empty-cell">{sequencedEntries.length === 0 ? 'No hay movimientos entrada_stock para valorar.' : 'No hay entradas con el estado seleccionado.'}</td></tr>
               )}
             </tbody>
           </table>

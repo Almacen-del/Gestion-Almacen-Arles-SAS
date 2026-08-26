@@ -3,6 +3,7 @@ import {
   assertEntryNotValued,
   calculateWeightedAverage,
   DuplicateEntryValuationError,
+  filterEntryValuations,
   inventoryValuationIdForEntry,
   InvalidEntryValuationDataError,
   MissingBaseAverageError,
@@ -75,6 +76,28 @@ describe('sequenceEntryValuations', () => {
   it('habilita la siguiente entrada cuando la anterior ya fue valorada', () => {
     const sequenced = sequenceEntryValuations(entries, new Set(['mov-a']));
     expect(sequenced.find((entry) => entry.id === 'mov-b')?.blockedByMovementId).toBeNull();
+  });
+
+  it('filtra por estado y permite invertir la fecha sin mutar la secuencia', () => {
+    const sequenced = sequenceEntryValuations(entries, new Set(['mov-c']));
+    expect(filterEntryValuations(sequenced, 'all', 'asc').map((entry) => entry.id))
+      .toEqual(['mov-c', 'mov-a', 'mov-b']);
+    const pending = filterEntryValuations(sequenced, 'pending', 'desc');
+    expect(pending.map((entry) => entry.id)).toEqual(['mov-b', 'mov-a']);
+    expect(pending[0].blockedByMovementId).toBe('mov-a');
+    expect(filterEntryValuations(sequenced, 'valued', 'asc').map((entry) => entry.id))
+      .toEqual(['mov-c']);
+    expect(sequenced.map((entry) => entry.id)).toEqual(['mov-c', 'mov-a', 'mov-b']);
+  });
+
+  it('conserva las dependencias ocultas y actualiza el filtro cuando se valora una entrada', () => {
+    const sequenced = sequenceEntryValuations(entries, new Set(['mov-a']));
+    const pending = filterEntryValuations(sequenced, 'pending', 'desc');
+    expect(pending.map((entry) => entry.id)).toEqual(['mov-b', 'mov-c']);
+    expect(pending[0].priorMovementIds).toEqual(['mov-a']);
+    expect(pending[0].blockedByMovementId).toBeNull();
+    expect(filterEntryValuations(sequenceEntryValuations(entries, new Set()), 'valued', 'asc'))
+      .toEqual([]);
   });
 });
 

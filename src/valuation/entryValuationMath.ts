@@ -147,3 +147,18 @@ export function assertEntryNotValued(
     throw new DuplicateEntryValuationError(movementId);
   }
 }
+
+export type EntryValuationStatusFilter = 'all' | 'pending' | 'valued';
+export type EntryValuationSortDirection = 'asc' | 'desc';
+
+// Filter only after sequencing so hidden rows still enforce valuation dependencies.
+export function filterEntryValuations<T extends ChronologicalEntry>(
+  entries: SequencedEntry<T>[],
+  status: EntryValuationStatusFilter,
+  direction: EntryValuationSortDirection,
+): SequencedEntry<T>[] {
+  const visible = entries.filter((entry) => status === 'all'
+    || (status === 'valued' ? entry.alreadyValued : !entry.alreadyValued));
+  visible.sort(compareEntryChronology);
+  return direction === 'desc' ? visible.reverse() : visible;
+}

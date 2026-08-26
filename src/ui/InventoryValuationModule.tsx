@@ -63,6 +63,14 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatUnitCurrency(value: number) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 6,
+  }).format(value);
+}
+
 function formatCompactCurrency(value: number) {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -551,7 +559,7 @@ function CurrentValuationView({
                       disabled={!online}
                       title={online ? `Editar valor unitario de ${row.product}` : 'Conéctate para editar el valor unitario'}
                     >
-                      <span>{formatCurrency(row.unitValue)}</span>
+                      <span>{formatUnitCurrency(row.unitValue)}</span>
                       <Pencil size={14} />
                     </button>
                   </td>
@@ -794,7 +802,7 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
                       <td className="col-ref" data-label="Referencia">{item.reference || 'N/A'}</td>
                       <td className="numeric" data-label="Cantidad">{formatNumber(item.quantity)}</td>
                       <td className="col-unit" data-label="Unidad">{item.unit}</td>
-                      <td className="numeric" data-label="Valor unitario">{formatCurrency(item.unitValue)}</td>
+                      <td className="numeric" data-label="Valor unitario">{formatUnitCurrency(item.unitValue)}</td>
                       <td className="numeric valuation-total" data-label="Valor total">{formatCurrency(item.totalValue)}</td>
                     </tr>
                   ))}

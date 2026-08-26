@@ -71,6 +71,8 @@ describe('Excel del histórico mensual', () => {
     expect(movements.getCell('N10').value).toBe(1);
     expect(movements.getCell('K11').value).toBe('No aplica');
     expect(movements.getCell('O9').value).toEqual({ formula: 'G9*L9*N9', result: 119_000 });
+    expect(movements.getCell('L9').numFmt).toContain('######');
+    expect(movements.getCell('G9').numFmt).toContain('######');
     expect(movements.getCell('P11').value).toBe('Sin precio');
     expect(movements.views[0]).toMatchObject({ state: 'frozen', ySplit: 7, xSplit: 1 });
     expect(movements.autoFilter).toBeTruthy();

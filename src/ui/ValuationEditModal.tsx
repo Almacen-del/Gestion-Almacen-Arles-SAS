@@ -6,7 +6,7 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency: 'COP',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 6,
   }).format(value);
 }
 function formatNumber(value: number) {
@@ -86,7 +86,7 @@ export default function ValuationEditModal({
                 autoFocus
                 type="number"
                 min="0"
-                step="1"
+                step="any"
                 inputMode="decimal"
                 value={value}
                 disabled={saving}

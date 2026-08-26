@@ -10,9 +10,9 @@ import { loadMonthlyActivity } from '../valuation/monthlyActivityStorage';
 import { generateMonthlyActivityExcel, monthlyActivityExcelFilename } from '../platform/monthlyActivityExcelExport';
 import { downloadExcelFile } from '../platform/browserPlatform';
 
-const amount = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value);
-const number = (value: number) => new Intl.NumberFormat('es-CO', { maximumFractionDigits: 3 }).format(value);
-const price = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 4 }).format(value);
+const amount = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 6 }).format(value);
+const number = (value: number) => new Intl.NumberFormat('es-CO', { maximumFractionDigits: 6 }).format(value);
+const price = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 6 }).format(value);
 
 function MovementDetails({ rows }: { rows: readonly MonthlyActivityRow[] }) {
   return <>

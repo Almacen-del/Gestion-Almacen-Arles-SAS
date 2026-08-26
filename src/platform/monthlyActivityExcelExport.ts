@@ -4,8 +4,8 @@ import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation
 
 const HEADER_ROW = 7;
 const FIRST_DATA_ROW = 8;
-const MONEY_FORMAT = '$ #,##0;[Red]-$ #,##0;"—"';
-const QUANTITY_FORMAT = '#,##0.###;[Red]-#,##0.###;"—"';
+const MONEY_FORMAT = '$ #,##0.######;[Red]-$ #,##0.######;"—"';
+const QUANTITY_FORMAT = '#,##0.######;[Red]-#,##0.######;"—"';
 const COLORS = {
   brand: 'FF16532C', green: 'FF087B3B', bright: 'FF11A84E', pale: 'FFE7F4E4',
   alternate: 'FFF4F9F5', text: 'FF172118', muted: 'FF5E7162', line: 'FFCDDCD0',

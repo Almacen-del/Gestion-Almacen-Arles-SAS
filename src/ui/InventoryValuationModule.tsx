@@ -1,3 +1,4 @@
+import ColumnFilterTable from './ColumnFilterTable';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { User } from 'firebase/auth';
 import {
@@ -517,7 +518,7 @@ function CurrentValuationView({
           <CircleDollarSign size={20} />
         </div>
         <div className="table-wrap valuation-table-wrap">
-          <table className="inventory-table valuation-general-table">
+          <ColumnFilterTable className="inventory-table valuation-general-table">
             <thead>
               <tr>
                 <th>Módulo</th>
@@ -564,7 +565,7 @@ function CurrentValuationView({
                 <tr><td colSpan={8} className="empty-cell"><div className="loading-state"><span className="loading-dot" /><span>Cargando valoración desde Firestore...</span></div></td></tr>
               )}
             </tbody>
-          </table>
+          </ColumnFilterTable>
         </div>
       </article>
 
@@ -782,7 +783,7 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
               <CalendarDays size={20} />
             </div>
             <div className="table-wrap valuation-table-wrap">
-              <table className="inventory-table valuation-general-table valuation-history-table">
+              <ColumnFilterTable key={selectedPeriod} className="inventory-table valuation-general-table valuation-history-table">
                 <thead><tr><th>Módulo</th><th className="col-code">Código</th><th className="col-desc">Producto</th><th className="col-ref">Referencia</th><th className="numeric">Cantidad</th><th className="col-unit">Unidad</th><th className="numeric col-valuation-unit">Valor unitario</th><th className="numeric col-valuation-total">Valor total</th></tr></thead>
                 <tbody>
                   {items.map((item) => (
@@ -800,7 +801,7 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
                   {loadingItems && <tr><td colSpan={8} className="empty-cell"><div className="loading-state"><span className="loading-dot" /><span>Cargando detalle mensual...</span></div></td></tr>}
                   {!loadingItems && items.length === 0 && <tr><td colSpan={8} className="empty-cell">Este corte no contiene productos.</td></tr>}
                 </tbody>
-              </table>
+              </ColumnFilterTable>
             </div>
           </article>
         </>

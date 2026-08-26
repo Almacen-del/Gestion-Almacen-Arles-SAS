@@ -1,3 +1,4 @@
+import ColumnFilterTable from './ColumnFilterTable';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign } from 'lucide-react';
 import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation/models';
@@ -12,23 +13,21 @@ const number = (value: number) => new Intl.NumberFormat('es-CO', { maximumFracti
 const price = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 4 }).format(value);
 
 function MovementDetails({ rows }: { rows: readonly MonthlyActivityRow[] }) {
-  const [visible, setVisible] = useState(50);
   return <>
     <div className="table-wrap monthly-activity-table-wrap">
-      <table className="inventory-table monthly-activity-table">
+      <ColumnFilterTable pageSize={50} className="inventory-table monthly-activity-table">
         <thead><tr><th>Fecha / tipo</th><th>Producto</th><th>Módulo</th><th>Cantidad</th><th>Lote de destino / persona</th><th>Precio base</th><th>Gasto de salida</th></tr></thead>
-        <tbody>{rows.slice(0, visible).map((row) => <tr key={row.id}>
+        <tbody>{rows.map((row) => <tr key={row.id}>
           <td>{formatMonthlyActivityDate(row.occurredAt)}<small>{row.kind === 'entry' ? 'Entrada' : 'Salida'}</small></td>
-          <td><strong>{row.product}</strong><small>{row.code || 'Sin código'}{row.reference && row.reference !== 'N/A' ? ` · ${row.reference}` : ''}</small></td>
+          <td data-filter-value={row.product}><strong>{row.product}</strong><small>{row.code || 'Sin código'}{row.reference && row.reference !== 'N/A' ? ` · ${row.reference}` : ''}</small></td>
           <td>{row.moduleName}</td>
           <td className="numeric">{number(row.quantity)} {row.unit}</td>
           <td>{row.destinationLot}<small>{row.recipientName}</small></td>
           <td className="numeric">{row.unitValue === null ? 'Sin precio' : price(row.unitValue)}<small>{row.priceUnit ? `por ${row.priceUnit}` : ''}</small></td>
           <td className="numeric"><strong>{row.kind === 'entry' ? '—' : row.expense === null ? 'No sumada' : amount(row.expense)}</strong>{row.kind === 'exit' && row.issue && <small className="monthly-activity-warning">{row.issue}</small>}</td>
         </tr>)}</tbody>
-      </table>
+      </ColumnFilterTable>
     </div>
-    {visible < rows.length && <button type="button" className="monthly-activity-more" onClick={() => setVisible((count) => count + 50)}>Mostrar 50 movimientos más ({rows.length - visible} pendientes)</button>}
   </>;
 }
 

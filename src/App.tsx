@@ -1,3 +1,4 @@
+import ColumnFilterTable from './ui/ColumnFilterTable';
 import { type CSSProperties, type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUserRoleListener } from './hooks/useUserRoleListener';
 
@@ -199,6 +200,7 @@ type InventoryItem = {
   estado?: string;
   ubicacion?: string;
   subcategoria?: string;
+  marca?: string;
   caracteristica?: string;
   total?: number;
   ocupados?: number;
@@ -463,6 +465,7 @@ function readInventoryDoc(doc: QueryDocumentSnapshot): InventoryItem {
     estado: textValue(data, 'estado'),
     ubicacion,
     subcategoria: subcategoria || 'Sin subcategoría',
+    marca: textValue(data, 'marca', 'brand'),
     expirationDate: dateTextValue(data, 'fecha_vencimiento', 'fechaVencimiento', 'vencimiento'),
     confirmedObsolete: normalize(textValue(data, 'estado_obsolescencia', 'estadoObsolescencia')) === 'obsoleto confirmado'
       || data.obsoleto_confirmado === true,
@@ -483,6 +486,8 @@ function readAseoDoc(doc: QueryDocumentSnapshot): InventoryItem {
     descripcion: textValue(data, 'producto', 'item', 'nombre') || doc.id,
     referencia: piso ? `Piso ${pisoTexto}` : 'Productos de aseo',
     categoria: textValue(data, 'categoria') || 'Productos de aseo',
+    subcategoria: textValue(data, 'subcategoria'),
+    marca: textValue(data, 'marca', 'brand'),
     unidad: textValue(data, 'unidad') || 'Unidad',
     saldo: numberValue(data, 'stock_actual'),
     estado: textValue(data, 'estado'),
@@ -554,6 +559,7 @@ function readToolDoc(doc: QueryDocumentSnapshot): InventoryItem {
     codigo,
     descripcion: textValue(data, 'nombre', 'item', 'producto') || doc.id,
     referencia: [subcategoria, tipo, tamano, marca].filter(Boolean).join(' - ') || 'N/A',
+    marca,
     categoria: submodulo,
     unidad: textValue(data, 'unidad') || 'Unidad',
     saldo: disponiblesCalculado,
@@ -1864,7 +1870,7 @@ function AppShell({ user }: { user: User }) {
 
     return (
       <>
-        <td className="valuation-unit-cell">
+        <td className="valuation-unit-cell" data-filter-value={formatCurrency(unitValue)}>
           <label className={`valuation-input ${saveState ?? ''}`} title={blockedReason || 'Se guarda al salir del campo o presionar Enter.'}>
             <span>$</span>
             <input
@@ -2837,7 +2843,10 @@ function AppShell({ user }: { user: User }) {
             </div>
 
             <div className="table-wrap" ref={inventoryTableRef}>
-              <table key={`${module}-${tallerSubmodulo || agroquimicosUbicacion || 'todos'}`} className={`inventory-table ${isTallerModule ? 'taller-table' : ''}`}>
+              <ColumnFilterTable key={`${module}-${tallerSubmodulo || agroquimicosUbicacion || 'todos'}`} className={`inventory-table ${isTallerModule ? 'taller-table' : ''}`} extraFilters={[
+                ...(module === 'Agroquimicos' ? [] : [{ key: 'subcategory', label: 'Subcategoría', values: new Map(moduleInventory.map((item) => [item.id, item.subcategoria || 'Sin subcategoría'])) }]),
+                { key: 'brand', label: 'Marca', values: new Map(moduleInventory.map((item) => [item.id, item.marca || 'Sin marca registrada'])) },
+              ]}>
                 <thead>
                   <tr>
                     <th className="col-code">Código</th>
@@ -2893,7 +2902,7 @@ function AppShell({ user }: { user: User }) {
                           <td className="numeric">{formatNumber(item.ocupados ?? 0)}</td>
                           {renderValuationCells(item)}
                           <td className="col-unit">{item.unidad}</td>
-                          <td className="col-status">
+                          <td className="col-status" data-filter-value={status.label}>
                             <span className={`status ${status.className}`}>{status.label}</span>
                             <button
                               className="status-toggle-button"
@@ -2983,7 +2992,7 @@ function AppShell({ user }: { user: User }) {
                     </tr>
                   )}
                 </tbody>
-              </table>
+              </ColumnFilterTable>
             </div>
           </article>
 

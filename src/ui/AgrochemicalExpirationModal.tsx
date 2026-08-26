@@ -1,3 +1,4 @@
+import ColumnFilterTable from './ColumnFilterTable';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, CalendarClock, PackageCheck, X } from 'lucide-react';
 import {
@@ -273,21 +274,21 @@ export default function AgrochemicalExpirationModal({
               <p className="agro-expiration-empty">Aún no hay lotes registrados. Los {uncoveredProducts.length} productos con stock deben asignarse por lote cuando se conozca su vencimiento.</p>
             ) : (
               <div className="table-wrap">
-                <table className="agro-expiration-table">
+                <ColumnFilterTable className="agro-expiration-table">
                   <thead><tr><th>Producto</th><th>Lote</th><th>Ingreso</th><th>Vencimiento</th><th>Días</th><th>Cantidad</th><th>Ubicación</th><th>Estado</th></tr></thead>
                   <tbody>{sortedLots.map((lot) => {
                     const product = productById.get(lot.productDocumentId);
                     const status = classifyAgrochemicalLot(lot, today);
                     const days = daysUntilExpiration(lot.expirationDate, today);
                     return <tr key={`${lot.productDocumentId}-${lot.id}`}>
-                      <td><strong>{product?.code || lot.productCode}</strong><span>{product?.name || lot.productName}</span></td>
+                      <td data-filter-value={product?.name || lot.productName}><strong>{product?.code || lot.productCode}</strong><span>{product?.name || lot.productName}</span></td>
                       <td>{lot.lotNumber}</td><td>{lot.receivedAt || 'Sin fecha'}</td><td>{lot.expirationDate ? `${lot.expirationDate}${lot.expirationDate.length === 7 ? ' (fin de mes)' : ''}` : 'Sin fecha'}</td>
                       <td>{days === null ? 'N/A' : days}</td><td>{formatQuantity(lot.quantity)} {lot.unit}</td>
                       <td>{lot.location || product?.location || 'Sin ubicación'}</td>
                       <td><span className={`agro-lot-status ${status}`}>{STATUS_LABELS[status]}</span></td>
                     </tr>;
                   })}</tbody>
-                </table>
+                </ColumnFilterTable>
               </div>
             )}
           </section>

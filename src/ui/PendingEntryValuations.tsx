@@ -1,3 +1,4 @@
+import ColumnFilterTable from './ColumnFilterTable';
 import { useMemo, useState, type CSSProperties } from 'react';
 import type { User } from 'firebase/auth';
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Clock3, Save, WifiOff } from 'lucide-react';
@@ -214,7 +215,7 @@ export default function PendingEntryValuations({
 
       <article className="panel valuation-general-panel entry-valuations-panel">
         <div className="table-wrap valuation-table-wrap entry-valuations-table-wrap">
-          <table className="inventory-table valuation-general-table entry-valuations-table">
+          <ColumnFilterTable className="inventory-table valuation-general-table entry-valuations-table">
             <thead>
               <tr>
                 <th>Fecha</th>
@@ -229,7 +230,7 @@ export default function PendingEntryValuations({
                 <th className="numeric">Valor entrada</th>
                 <th className="numeric">Total entrada</th>
                 <th className="numeric">Nuevo promedio</th>
-                <th>Acción</th>
+                <th data-filter-disabled>Acción</th>
               </tr>
             </thead>
             <tbody>
@@ -265,7 +266,7 @@ export default function PendingEntryValuations({
                     <td data-label="Estado">
                       <span className={`entry-status ${record ? 'valued' : 'pending'}`}>{record ? 'Valorada' : 'Pendiente'}</span>
                     </td>
-                    <td className="numeric entry-value-input-cell" data-label="Valor entrada">
+                    <td className="numeric entry-value-input-cell" data-label="Valor entrada" data-filter-value={record ? formatCurrency(record.entryUnitValue) : 'Pendiente'}>
                       <input
                         aria-label={`Valor unitario de ${row.product}`}
                         type="number"
@@ -301,7 +302,7 @@ export default function PendingEntryValuations({
                 <tr><td colSpan={13} className="empty-cell">{sequencedEntries.length === 0 ? 'No hay movimientos entrada_stock para valorar.' : 'No hay entradas con el estado seleccionado.'}</td></tr>
               )}
             </tbody>
-          </table>
+          </ColumnFilterTable>
         </div>
       </article>
     </section>

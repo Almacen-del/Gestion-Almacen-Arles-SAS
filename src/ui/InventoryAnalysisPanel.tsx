@@ -1,3 +1,4 @@
+import ColumnFilterTable from './ColumnFilterTable';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BarChart3, CalendarDays, PackageSearch, RotateCcw, Settings2, TrendingUp, X } from 'lucide-react';
 import {
@@ -136,7 +137,6 @@ export default function InventoryAnalysisPanel({
   const [statusFilter, setStatusFilter] = useState<InventoryClassificationStatus | ''>('');
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('days');
-  const [visibleLimit, setVisibleLimit] = useState(100);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [thresholds, setThresholds] = useState<InventoryAnalysisThresholds>(() => (
@@ -270,7 +270,6 @@ export default function InventoryAnalysisPanel({
     agrochemicalEntries,
     expirationLots,
   ).filter((entry) => entry.assignmentStatus !== 'assigned'), [agrochemicalEntries, expirationLots]);
-  const visibleRows = rows.slice(0, visibleLimit);
   const hasExpirationData = rows.some((row) => Boolean(row.product.expirationDate));
   const selectedRow = allRows.find((row) => row.product.id === selectedProductId) ?? null;
   const selectedHistory = useMemo(() => {
@@ -426,26 +425,20 @@ export default function InventoryAnalysisPanel({
       <section className="analysis-table-panel">
         <header><div><p className="eyebrow">Detalle trazable</p><h2>Análisis por producto</h2></div><label>Ordenar<select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}><option value="days">Más días sin movimiento</option><option value="never-moved">Productos sin movimientos</option><option value="turnover">Mayor rotación</option><option value="product">Producto</option></select></label></header>
         <div className="table-wrap">
-          <table className={`analysis-table${hasExpirationData ? ' has-expiration' : ''}`}>
+          <ColumnFilterTable pageSize={100} key={`${moduleFilter}-${hasExpirationData}`} className={`analysis-table${hasExpirationData ? ' has-expiration' : ''}`}>
             <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Inicial</th><th>Entradas</th><th>Salidas</th><th>Final</th><th>Disponible total</th><th>Promedio</th><th>Rotación</th><th>Última salida</th><th>Días sin movimiento</th>{hasExpirationData && <th>Vencimiento</th>}<th>Estado</th></tr></thead>
             <tbody>
-              {visibleRows.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.product.id} className={row.quality !== 'exact' ? 'analysis-row-review' : ''} title={row.classification.reasons.join(' ')}>
-                  <td>{row.product.code || 'Sin código'}</td><td><button type="button" className="analysis-product-link" onClick={() => setSelectedProductId(row.product.id)}>{row.product.name}</button><small>{row.product.module} · {row.product.unit}</small></td><td>{row.product.category}</td>
+                  <td>{row.product.code || 'Sin código'}</td><td data-filter-value={row.product.name}><button type="button" className="analysis-product-link" onClick={() => setSelectedProductId(row.product.id)}>{row.product.name}</button><small>{row.product.module} · {row.product.unit}</small></td><td>{row.product.category}</td>
                   <td className="numeric">{formatQuantity(row.openingInventory)}</td><td className="numeric">{formatQuantity(row.entries)}</td><td className="numeric">{formatQuantity(row.exits)}</td><td className="numeric">{formatQuantity(row.closingInventory)}</td><td className="numeric analysis-current-stock">{formatQuantity(row.product.currentStock ?? null)}</td><td className="numeric">{formatQuantity(row.averageInventory)}</td><td className="numeric">{formatTurnover(row.turnover)}</td>
                   <td>{row.lastExitDate ?? 'Sin salidas registradas'}</td><td className="numeric">{row.daysWithoutMovement ?? 'N/A'}</td>{hasExpirationData && <td>{row.product.expirationDate || 'N/A'}</td>}<td><span className={`analysis-status status-${row.classification.status}`}>{row.classification.label}</span></td>
                 </tr>
               ))}
               {rows.length === 0 && <tr><td colSpan={hasExpirationData ? 14 : 13} className="empty-cell">No hay productos que coincidan con los filtros.</td></tr>}
             </tbody>
-          </table>
+          </ColumnFilterTable>
         </div>
-        {visibleRows.length < rows.length && (
-          <div className="analysis-table-more">
-            <span>Mostrando {visibleRows.length} de {rows.length} productos.</span>
-            <button type="button" onClick={() => setVisibleLimit((current) => current + 100)}>Mostrar 100 más</button>
-          </div>
-        )}
       </section>
 
       {selectedRow && (
@@ -493,12 +486,12 @@ export default function InventoryAnalysisPanel({
                   ))}
                 </div>
                 <div className="analysis-chart-legend"><span className="legend-exits">Salidas</span><span className="legend-turnover">Rotación × 10</span><span className="legend-days">Días sin movimiento</span></div>
-                <div className="table-wrap"><table className="analysis-history-table"><thead><tr><th>Mes</th><th>Inicial</th><th>Entradas</th><th>Salidas</th><th>Final</th><th>Rotación</th><th>Días sin movimiento</th></tr></thead><tbody>{selectedHistory.map((entry) => <tr key={entry.period.from}><td>{entry.label}</td><td>{formatQuantity(entry.openingInventory)}</td><td>{formatQuantity(entry.entries)}</td><td>{formatQuantity(entry.exits)}</td><td>{formatQuantity(entry.closingInventory)}</td><td>{formatTurnover(entry.turnover)}</td><td>{entry.daysWithoutMovement ?? 'N/A'}</td></tr>)}</tbody></table></div>
+                <div className="table-wrap"><ColumnFilterTable className="analysis-history-table"><thead><tr><th>Mes</th><th>Inicial</th><th>Entradas</th><th>Salidas</th><th>Final</th><th>Rotación</th><th>Días sin movimiento</th></tr></thead><tbody>{selectedHistory.map((entry) => <tr key={entry.period.from}><td>{entry.label}</td><td>{formatQuantity(entry.openingInventory)}</td><td>{formatQuantity(entry.entries)}</td><td>{formatQuantity(entry.exits)}</td><td>{formatQuantity(entry.closingInventory)}</td><td>{formatTurnover(entry.turnover)}</td><td>{entry.daysWithoutMovement ?? 'N/A'}</td></tr>)}</tbody></ColumnFilterTable></div>
               </section>
 
               <section className="analysis-evidence-section">
                 <header><p className="eyebrow">Trazabilidad</p><h3>Movimientos usados en el cálculo</h3><small>Incluye las anclas históricas anteriores necesarias para reconstruir el saldo inicial.</small></header>
-                {selectedEvidenceMovements.length === 0 ? <p>No hay movimientos vinculados que puedan mostrarse para este cálculo.</p> : <div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Cantidad</th><th>Saldo anterior</th><th>Saldo nuevo</th><th>ID</th></tr></thead><tbody>{selectedEvidenceMovements.map((movement) => <tr key={movement.id}><td>{movement.occurredAt}</td><td>{movement.type}</td><td>{formatQuantity(movement.quantity)}</td><td>{formatQuantity(movement.stockBefore ?? null)}</td><td>{formatQuantity(movement.stockAfter ?? null)}</td><td><code>{movement.id}</code></td></tr>)}</tbody></table></div>}
+                {selectedEvidenceMovements.length === 0 ? <p>No hay movimientos vinculados que puedan mostrarse para este cálculo.</p> : <div className="table-wrap"><ColumnFilterTable><thead><tr><th>Fecha</th><th>Tipo</th><th>Cantidad</th><th>Saldo anterior</th><th>Saldo nuevo</th><th>ID</th></tr></thead><tbody>{selectedEvidenceMovements.map((movement) => <tr key={movement.id}><td>{movement.occurredAt}</td><td>{movement.type}</td><td>{formatQuantity(movement.quantity)}</td><td>{formatQuantity(movement.stockBefore ?? null)}</td><td>{formatQuantity(movement.stockAfter ?? null)}</td><td><code>{movement.id}</code></td></tr>)}</tbody></ColumnFilterTable></div>}
               </section>
             </div>
           </section>

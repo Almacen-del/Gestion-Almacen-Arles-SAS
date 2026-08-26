@@ -34,6 +34,7 @@ import {
   getDocsFromServer,
   limit as firestoreLimit,
   onSnapshot,
+  Timestamp,
   orderBy,
   query,
   QueryDocumentSnapshot,
@@ -80,6 +81,7 @@ import AgrochemicalExpirationModal, {
 import ValuationEditModal from './ui/ValuationEditModal';
 import type { CurrentValuationRow, ValuationSaveState } from './valuation/models';
 import { calculateEstimatedExitExpense } from './valuation/exitExpense';
+import type { MonthlyActivitySource } from './valuation/monthlyActivity';
 import {
   subscribeEntryStockMovements,
   subscribeEntryValuationRecords,
@@ -225,6 +227,8 @@ type OccupiedSubmoduleGroup = {
 };
 
 type Movement = {
+  destinationLot?: string;
+  monthlyOccurredAt?: string;
   id: string;
   modulo: string;
   tipo: string;
@@ -650,6 +654,8 @@ function readMovementDoc(doc: QueryDocumentSnapshot): Movement {
   const tipo = textValue(data, 'tipoMovimiento', 'tipo', 'movimiento') || 'Movimiento';
 
   const movement: Movement = {
+    destinationLot: textValue(data, 'lote_destino', 'loteDestino', 'lote_aplicacion', 'loteAplicacion'),
+    monthlyOccurredAt: data.fecha instanceof Timestamp ? data.fecha.toDate().toISOString() : undefined,
     id: doc.id,
     modulo,
     tipo,
@@ -2130,6 +2136,16 @@ function AppShell({ user }: { user: User }) {
     analysisSourceProducts,
     analysisSourceMovements,
   ), [analysisSourceMovements, analysisSourceProducts, valuationRows]);
+  const monthlyActivitySources = useMemo<MonthlyActivitySource[]>(() => movements.map((movement) => ({
+    id: movement.id, module: movement.modulo, type: movement.tipo,
+    code: movement.codigo, name: movement.descripcion, reference: movement.referencia,
+    quantity: movement.cantidad, unit: movement.unidad,
+    occurredAt: movement.monthlyOccurredAt || movement.fecha,
+    productDocumentId: movement.productDocumentId,
+    destinationLot: movement.destinationLot, observations: movement.observaciones, zone: movement.zona,
+    recipientId: users[movement.solicitante] ? `uid:${movement.solicitante}` : movement.solicitante,
+    recipientName: users[movement.solicitante]?.nombre || users[movement.solicitante]?.email || movement.solicitante,
+  })), [movements, users]);
 
   useEffect(() => {
     if (
@@ -2686,6 +2702,7 @@ function AppShell({ user }: { user: User }) {
             entryStockMovements={entryStockMovements}
             entryValuationRecords={entryValuationRecords}
             estimatedExitExpense={estimatedExitExpense}
+            monthlyActivitySources={monthlyActivitySources}
             exitHistoryComplete={!hasMoreMovements && isServerSourceReady(firestoreSources.movements)}
             exitHistoryLoading={loadingMoreMovements}
             onEdit={(valuationId) => {

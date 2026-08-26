@@ -46,6 +46,7 @@ function input(overrides: Partial<Parameters<typeof evaluateMonthlyCloseEligibil
     period: '2026-07',
     now: new Date('2026-08-01T04:00:00.000Z'),
     online: true,
+    movementHistoryComplete: true,
     sources: readySources(),
     closesSource: { ...serverState },
     rows: [valuedRow()],
@@ -66,6 +67,7 @@ describe('elegibilidad del cierre mensual', () => {
   });
 
   it('bloquea datos parciales, caché, errores y escrituras pendientes', () => {
+    expect(evaluateMonthlyCloseEligibility(input({ movementHistoryComplete: false })).eligible).toBe(false);
     const partial = readySources();
     partial.inventory = { ...serverState, received: false };
     expect(evaluateMonthlyCloseEligibility(input({ sources: partial })).reasons)

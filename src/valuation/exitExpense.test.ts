@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateEstimatedExitExpense } from './exitExpense';
 import type { CurrentValuationRow } from './models';
+import { buildMonthlyActivity, destinationLotOf, groupMonthlyExpenses, summarizeMonthlyActivity, type MonthlyActivitySource } from './monthlyActivity';
 
 const rows: CurrentValuationRow[] = [{
   valuationId: 'existencias__p1',
@@ -73,5 +74,77 @@ describe('gasto estimado de salidas', () => {
         exitCount: 1,
       }],
     });
+  });
+});
+
+function monthlyMovement(id: string, overrides: Partial<MonthlyActivitySource> = {}): MonthlyActivitySource {
+  return {
+    id, module: 'Consumibles', type: 'Salida', code: 'P1', name: 'Producto uno', reference: 'N/A',
+    quantity: 2, unit: 'Unidad', occurredAt: '2026-08-10 10:00', ...overrides,
+  };
+}
+const monthlyCutoff = new Date('2026-08-26T18:00:00Z');
+
+describe('actividad y desglose del gasto mensual', () => {
+  it('respeta el mes de Bogotá y el corte, deduplica y excluye Taller, ajustes y cantidades inválidas', () => {
+    const snapshot = buildMonthlyActivity('2026-08', rows, [
+      monthlyMovement('salida'), monthlyMovement('salida'),
+      monthlyMovement('entrada', { type: 'Entrada', quantity: 3 }),
+      monthlyMovement('julio', { occurredAt: '2026-08-01T04:59:00Z' }),
+      monthlyMovement('agosto', { occurredAt: '2026-08-01T05:00:00Z' }),
+      monthlyMovement('posterior', { occurredAt: '2026-08-26T18:01:00Z' }),
+      monthlyMovement('taller', { module: 'TALLER' }), monthlyMovement('ajuste', { type: 'Ajuste' }),
+      monthlyMovement('cero', { quantity: 0 }), monthlyMovement('negativo', { quantity: -2 }),
+      monthlyMovement('sin-fecha', { occurredAt: '' }),
+    ], monthlyCutoff);
+    expect(snapshot.rows.map((row) => row.id).sort()).toEqual(['agosto', 'entrada', 'salida']);
+    expect(snapshot.invalidDateCount).toBe(1);
+    expect(snapshot.invalidQuantityCount).toBe(2);
+    expect(summarizeMonthlyActivity(snapshot.rows)).toMatchObject({ entryCount: 1, exitCount: 2, estimatedExpense: 10_000 });
+  });
+
+  it('usa el precio del corte y conserva salidas no identificadas o sin precio sin inventar valores', () => {
+    const snapshot = buildMonthlyActivity('2026-08', rows, [
+      monthlyMovement('valorada', { observations: 'Lote: 15; Responsable: Luis' }),
+      monthlyMovement('sin-precio', { code: 'P2', name: 'Producto dos', destinationLot: 'Lote 15' }),
+      monthlyMovement('no-identificada', { code: '?', name: '?' }),
+    ], monthlyCutoff);
+    expect(summarizeMonthlyActivity(snapshot.rows)).toMatchObject({ estimatedExpense: 5_000, exitCount: 3, unpricedExitCount: 2 });
+    const byLot = groupMonthlyExpenses(snapshot.rows, 'lot');
+    expect(byLot[0]).toMatchObject({ label: '15', expense: 5_000, unpriced: 1 });
+    for (const grouping of ['lot', 'module', 'product'] as const) {
+      expect(groupMonthlyExpenses(snapshot.rows, grouping).reduce((sum, group) => sum + group.expense, 0)).toBe(5_000);
+    }
+    expect(destinationLotOf(monthlyMovement('zona', { zone: 'Lote 7' }))).toBe('7');
+    expect(destinationLotOf(monthlyMovement('nota-real', { observations: 'Lote 3 12 de agosto' }))).toBe('3');
+    expect(destinationLotOf(monthlyMovement('varios', { observations: 'Lotes: 1 y 2; entrega' }))).toBe('1 y 2');
+    expect(destinationLotOf(monthlyMovement('sin-lote'))).toBe('Sin lote de destino');
+  });
+
+  it('convierte unidades compatibles para valorar, sin mezclar cantidades ni cobrar una unidad incompatible', () => {
+    const agroRow = { ...rows[0], unit: 'GRAMO', unitValue: 4.9, moduleName: 'Agroquímicos' };
+    const snapshot = buildMonthlyActivity('2026-08', [agroRow], [
+      monthlyMovement('kg', { module: 'Agroquímicos', quantity: 50, unit: 'KG' }),
+      monthlyMovement('incompatible', { module: 'Agroquímicos', unit: 'Unidad' }),
+    ], monthlyCutoff);
+    expect(snapshot.rows.find((row) => row.id === 'kg')).toMatchObject({ quantity: 50, unit: 'KG', priceUnit: 'GRAMO' });
+    expect(snapshot.rows.find((row) => row.id === 'kg')?.expense).toBeCloseTo(245_000, 2);
+    expect(snapshot.rows.find((row) => row.id === 'incompatible')).toMatchObject({ expense: null, issue: 'Unidad incompatible' });
+  });
+
+  it('agrupa Dotación y EPP por destinatario con sus productos, sin incluir otros módulos', () => {
+    const personalRows = [{ ...rows[0], moduleName: 'EPP' }, { ...rows[1], moduleName: 'Dotación', unitValue: 1000 }];
+    const snapshot = buildMonthlyActivity('2026-08', personalRows, [
+      monthlyMovement('epp', { module: 'EPP', recipientId: ' Luis Pérez ', recipientName: 'Luis Pérez' }),
+      monthlyMovement('dotacion', { module: 'Dotación', code: 'P2', name: 'Producto dos', recipientId: 'luis pérez', recipientName: 'Luis Pérez' }),
+      monthlyMovement('sin-persona', { module: 'EPP' }),
+      monthlyMovement('otro-modulo'),
+      monthlyMovement('entrada', { module: 'EPP', type: 'Entrada', recipientId: 'Luis Pérez' }),
+    ], monthlyCutoff);
+    const groups = groupMonthlyExpenses(snapshot.rows, 'person');
+    expect(groups).toHaveLength(2);
+    expect(groups.find((group) => group.label === 'Luis Pérez')).toMatchObject({ expense: 7_000 });
+    expect(groups.find((group) => group.label === 'Luis Pérez')?.rows.map((row) => row.moduleName).sort()).toEqual(['Dotación', 'EPP']);
+    expect(groups.find((group) => group.label === 'Sin personal identificado')).toMatchObject({ expense: 5_000 });
   });
 });

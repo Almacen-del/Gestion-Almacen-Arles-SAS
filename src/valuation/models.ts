@@ -31,6 +31,7 @@ export type CurrentValuationSummary = {
 };
 
 export type MonthlyValuationSummary = {
+  activity?: import('./monthlyActivityStorage').MonthlyActivityMetadata | null;
   period: string;
   totalValue: number;
   productCount: number;

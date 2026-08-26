@@ -213,6 +213,9 @@ service cloud.firestore {
       match /items/{itemId} {
         allow read, write: if isActiveUser();
       }
+      match /movimientos/{movementId} {
+        allow read, write: if isActiveUser();
+      }
     }
 
     // Cualquier colección no declarada queda cerrada por defecto.

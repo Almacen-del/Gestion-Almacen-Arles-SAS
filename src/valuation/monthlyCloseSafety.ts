@@ -24,6 +24,7 @@ export type MonthlyCloseEligibilityInput = {
   period: string;
   now: Date;
   online: boolean;
+  movementHistoryComplete: boolean;
   sources: FirestoreSourceStates;
   closesSource: FirestoreSourceState;
   rows: CurrentValuationRow[];
@@ -90,6 +91,7 @@ export function evaluateMonthlyCloseEligibility({
   period,
   now,
   online,
+  movementHistoryComplete,
   sources,
   closesSource,
   rows,
@@ -103,6 +105,9 @@ export function evaluateMonthlyCloseEligibility({
   const currentPeriod = currentBogotaPeriod(now);
 
   if (!online) reasons.push('No hay conexión con Firestore.');
+  if (!movementHistoryComplete || !isServerSourceReady(sources.movements)) {
+    reasons.push('El historial de movimientos debe estar completo y confirmado para guardar el gasto mensual.');
+  }
 
   CLOSE_REQUIRED_SOURCE_KEYS.forEach((key) => {
     const state = sources[key];

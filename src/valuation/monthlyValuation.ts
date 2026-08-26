@@ -29,6 +29,8 @@ import {
   isLastBogotaDayOfMonth,
 } from './monthlyCloseSafety';
 import type { CurrentValuationRow, MonthlyValuationItem, MonthlyValuationSummary } from './models';
+import { buildMonthlyActivity, type MonthlyActivitySource } from './monthlyActivity';
+import { monthlyActivityMetadata, saveMonthlyActivity, type MonthlyActivityMetadata } from './monthlyActivityStorage';
 
 const MONTHLY_CLOSES_COLLECTION = 'cierres_valoracion_inventario';
 const FIRESTORE_SAFE_BATCH_SIZE = 450;
@@ -108,6 +110,8 @@ function readMonthlySummary(period: string, data: Record<string, unknown>): Mont
 
   return {
     period,
+    activity: data.actividad && typeof data.actividad === 'object' && (data.actividad as MonthlyActivityMetadata).version === 1
+      ? { ...(data.actividad as MonthlyActivityMetadata), period } : null,
     totalValue: Number(summary.valor_total) || 0,
     productCount: Number(summary.cantidad_productos) || 0,
     valuedProductCount: Number(summary.productos_con_valor) || 0,
@@ -239,6 +243,8 @@ export async function saveMonthlyValuationClose({
   moduleOptions,
   user,
   earlyConfirmation,
+  movements,
+  historyComplete,
   onProgress,
 }: {
   period: string;
@@ -246,9 +252,12 @@ export async function saveMonthlyValuationClose({
   moduleOptions: string[];
   user: User;
   earlyConfirmation: string;
+  movements: readonly MonthlyActivitySource[];
+  historyComplete: boolean;
   onProgress: (completedSteps: number, totalSteps: number) => void;
 }) {
   const requestedAt = new Date();
+  if (!historyComplete) throw new Error('El historial completo debe estar confirmado antes de guardar el gasto mensual.');
   assertCurrentBogotaPeriod(period, requestedAt);
   if (
     !isLastBogotaDayOfMonth(requestedAt)
@@ -257,9 +266,10 @@ export async function saveMonthlyValuationClose({
     throw new EarlyMonthlyCloseConfirmationError(period);
   }
   const integrity = buildExpectedMonthlyCloseIntegrity(rows);
+  const activity = buildMonthlyActivity(period, rows, movements, requestedAt);
   const summary = summarizeCurrentValuation(rows, moduleOptions);
   const chunks = chunkArray(rows);
-  const totalSteps = chunks.length + 4;
+  const totalSteps = chunks.length + 5;
   const closeRef = doc(db, MONTHLY_CLOSES_COLLECTION, period);
   const userLabel = user.email || user.displayName || user.uid;
   const attemptId = createAttemptId();
@@ -288,6 +298,7 @@ export async function saveMonthlyValuationClose({
     transaction.set(closeRef, {
       periodo: period,
       resumen: summaryPayload,
+      actividad: monthlyActivityMetadata(activity),
       fecha: serverTimestamp(),
       usuario: userLabel,
       usuario_uid: user.uid,
@@ -344,6 +355,9 @@ export async function saveMonthlyValuationClose({
     );
     if (!allItemsFromAttempt || !verification.valid) throw new MonthlyCloseVerificationError();
     onProgress(chunks.length + 3, totalSteps);
+
+    await saveMonthlyActivity(activity, attemptId);
+    onProgress(chunks.length + 4, totalSteps);
 
     await runTransaction(db, async (transaction) => {
       const current = await transaction.get(closeRef);

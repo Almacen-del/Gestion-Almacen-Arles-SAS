@@ -7,6 +7,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { collection, collectionGroup, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, Timestamp, type Firestore } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { loadMonthlyActivity, monthlyActivityMetadata, saveMonthlyActivity } from '../valuation/monthlyActivityStorage';
+import type { MonthlyActivitySnapshot } from '../valuation/monthlyActivity';
 import {
   emptyValuationRevision,
   ManualValuationConflictError,
@@ -111,6 +113,32 @@ describe('isActiveUser en firestore.rules', () => {
   it('bloquea lecturas sin autenticación', async () => {
     const context = testEnvironment.unauthenticatedContext();
     await assertFails(getDoc(doc(context.firestore(), 'existencias', 'producto-prueba')));
+  });
+
+  it('guarda, verifica y relee el gasto del corte sin modificar sus movimientos originales', async () => {
+    await seedUser('actividad-activo', { activo: true, rol: 'operador' });
+    const context = testEnvironment.authenticatedContext('actividad-activo', { email: 'actividad@example.com' });
+    const firestore = context.firestore() as unknown as Firestore;
+    const snapshot: MonthlyActivitySnapshot = {
+      period: '2026-08', cutoffAt: '2026-08-26T18:00:00Z', invalidDateCount: 0, invalidQuantityCount: 0,
+      rows: [{
+        id: 'salida-1', kind: 'exit', occurredAt: '2026-08-01 10:00', moduleName: 'EPP',
+        productId: 'existencias__p1', code: 'P1', product: 'Guantes', reference: 'Talla 9', quantity: 2, unit: 'Unidad',
+        destinationLot: '15', recipientId: 'Luis', recipientName: 'Luis', unitValue: 100,
+        priceUnit: 'Unidad', expense: 200, issue: '',
+      }],
+    };
+    await setDoc(doc(firestore, 'movimientos', 'salida-1'), { cantidad: 2, observaciones: 'Original' });
+    await assertSucceeds(saveMonthlyActivity(snapshot, 'intento-1', firestore));
+    const loaded = await loadMonthlyActivity(monthlyActivityMetadata(snapshot), firestore);
+    expect(loaded.rows).toEqual(snapshot.rows);
+    expect((await getDoc(doc(firestore, 'movimientos', 'salida-1'))).data()).toEqual({ cantidad: 2, observaciones: 'Original' });
+    const anonymous = testEnvironment.unauthenticatedContext().firestore();
+    await assertFails(getDocs(collection(anonymous, 'cierres_valoracion_inventario', '2026-08', 'movimientos')));
+    await setDoc(doc(firestore, 'cierres_valoracion_inventario', '2026-08', 'movimientos', 'salida-1'), {
+      intento_id: 'intento-1', detalle: { ...snapshot.rows[0], expense: 201 },
+    });
+    await expect(loadMonthlyActivity(monthlyActivityMetadata(snapshot), firestore)).rejects.toThrow('no coincide');
   });
 
   it('un almacenista no puede cambiar perfiles ni roles de usuarios', async () => {

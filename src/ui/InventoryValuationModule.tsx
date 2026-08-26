@@ -48,6 +48,8 @@ import {
 import { isInventoryValuationModuleIncluded } from '../valuation/inventoryValuationScope';
 import { shouldShowCurrentValueModuleCard } from './currentValueModuleCards';
 import PendingEntryValuations from './PendingEntryValuations';
+import MonthlyActivityPanel from './MonthlyActivityPanel';
+import type { MonthlyActivitySource } from '../valuation/monthlyActivity';
 
 type ValuationTab = 'current' | 'entries' | 'history';
 type MonthlySaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -239,6 +241,7 @@ function MonthlyCloseConfirmation({
 }
 
 function CurrentValuationView({
+  monthlyActivitySources,
   rows,
   moduleOptions,
   online,
@@ -252,6 +255,7 @@ function CurrentValuationView({
   exitHistoryLoading,
   onEdit,
 }: {
+  monthlyActivitySources: readonly MonthlyActivitySource[];
   rows: CurrentValuationRow[];
   moduleOptions: string[];
   online: boolean;
@@ -282,6 +286,7 @@ function CurrentValuationView({
     [moduleFilter, rows, search, valueFilter],
   );
   const eligibility = evaluateMonthlyCloseEligibility({
+    movementHistoryComplete: exitHistoryComplete,
     period,
     now: new Date(),
     online,
@@ -310,6 +315,7 @@ function CurrentValuationView({
 
   async function confirmMonthlyClose(earlyConfirmation: string) {
     const latestEligibility = evaluateMonthlyCloseEligibility({
+      movementHistoryComplete: exitHistoryComplete,
       period,
       now: new Date(),
       online,
@@ -335,6 +341,8 @@ function CurrentValuationView({
 
     try {
       const result = await saveMonthlyValuationClose({
+        movements: monthlyActivitySources,
+        historyComplete: exitHistoryComplete,
         period,
         rows,
         moduleOptions,
@@ -576,7 +584,9 @@ function CurrentValuationView({
   );
 }
 
-function HistoricalValuationView() {
+function HistoricalValuationView({ sources, historyReady }: { sources: readonly MonthlyActivitySource[]; historyReady: boolean }) {
+  const [view, setView] = useState<'inventory' | 'movements' | 'expense'>('inventory');
+  const [itemsPeriod, setItemsPeriod] = useState('');
   const [summaries, setSummaries] = useState<MonthlyValuationSummary[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState('');
   const [items, setItems] = useState<MonthlyValuationItem[]>([]);
@@ -639,7 +649,7 @@ function HistoricalValuationView() {
     setHistoryError('');
     void loadMonthlyValuationItems(selectedPeriod)
       .then((nextItems) => {
-        if (active) setItems(nextItems);
+        if (active) { setItems(nextItems); setItemsPeriod(selectedPeriod); }
       })
       .catch((error) => {
         console.error('No se pudo cargar el detalle del corte mensual:', error);
@@ -701,12 +711,19 @@ function HistoricalValuationView() {
 
       {historyError && <div className="alert-line"><AlertTriangle size={18} />{historyError}</div>}
 
+      {selectedSummary && <div className="valuation-tabs monthly-activity-view-tabs" role="tablist" aria-label="Contenido del histórico mensual">
+        {([['inventory', 'Valor del inventario'], ['movements', 'Entradas y salidas'], ['expense', 'Gasto mensual']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}
+      </div>}
+
       {!selectedSummary ? (
         <article className="panel valuation-history-empty">
           <CalendarDays size={34} />
           <h2>No hay cortes mensuales guardados</h2>
           <p>Usa “Guardar corte del mes” en la pestaña Valor actual para crear el primer histórico.</p>
         </article>
+      ) : view !== 'inventory' ? (
+        <MonthlyActivityPanel key={selectedSummary.period} view={view} summary={selectedSummary} items={items}
+          sources={sources} historyReady={historyReady} itemsReady={itemsPeriod === selectedPeriod && !loadingItems} />
       ) : (
         <>
           <section className="valuation-history-summary-grid">
@@ -793,6 +810,7 @@ function HistoricalValuationView() {
 }
 
 export default function InventoryValuationModule({
+  monthlyActivitySources,
   rows,
   moduleOptions,
   online,
@@ -808,6 +826,7 @@ export default function InventoryValuationModule({
   exitHistoryLoading,
   onEdit,
 }: {
+  monthlyActivitySources: readonly MonthlyActivitySource[];
   rows: CurrentValuationRow[];
   moduleOptions: string[];
   online: boolean;
@@ -848,6 +867,7 @@ export default function InventoryValuationModule({
       </div>
       {activeTab === 'current' ? (
         <CurrentValuationView
+          monthlyActivitySources={monthlyActivitySources}
           rows={rows}
           moduleOptions={moduleOptions}
           online={online}
@@ -873,7 +893,7 @@ export default function InventoryValuationModule({
           loadError={entryLoadError}
         />
       ) : (
-        <HistoricalValuationView />
+        <HistoricalValuationView sources={monthlyActivitySources} historyReady={exitHistoryComplete} />
       )}
     </section>
   );

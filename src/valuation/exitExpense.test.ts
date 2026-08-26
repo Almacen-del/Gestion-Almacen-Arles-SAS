@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateEstimatedExitExpense } from './exitExpense';
 import type { CurrentValuationRow } from './models';
-import { buildMonthlyActivity, destinationLotOf, groupMonthlyExpenses, summarizeMonthlyActivity, type MonthlyActivitySource } from './monthlyActivity';
+import { buildMonthlyActivity, destinationLotOf, FUEL_ROUTE_DESTINATION, groupMonthlyExpenses, recoverMonthlyDestinations, summarizeMonthlyActivity, type MonthlyActivitySource } from './monthlyActivity';
 
 const rows: CurrentValuationRow[] = [{
   valuationId: 'existencias__p1',
@@ -86,6 +86,37 @@ function monthlyMovement(id: string, overrides: Partial<MonthlyActivitySource> =
 const monthlyCutoff = new Date('2026-08-26T18:00:00Z');
 
 describe('actividad y desglose del gasto mensual', () => {
+  it('lee los lotes escritos en Labor/Frente y reconoce Recorridos de combustible', () => {
+    expect(destinationLotOf(monthlyMovement('11', { labor: 'Plateo mecánico lote 11' }))).toBe('11');
+    expect(destinationLotOf(monthlyMovement('17', { front: 'Roto speed lote 17' }))).toBe('17');
+    for (const label of ['Recorridos', ' recorrido ', 'RECORRIDOS.']) {
+      expect(destinationLotOf(monthlyMovement('ruta', { module: 'Combustible', labor: label }))).toBe(FUEL_ROUTE_DESTINATION);
+    }
+    expect(destinationLotOf(monthlyMovement('frente', { module: 'Combustible', front: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
+    expect(destinationLotOf(monthlyMovement('explicit', { module: 'Combustible', destinationLot: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
+    expect(destinationLotOf(monthlyMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe('8');
+    expect(destinationLotOf(monthlyMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe('9');
+    expect(destinationLotOf(monthlyMovement('otro', { module: 'EPP', labor: 'Recorridos' }))).toBe('Sin lote de destino');
+    expect(destinationLotOf(monthlyMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía COP' }))).toBe('Sin lote de destino');
+  });
+
+  it('recupera el destino de cortes antiguos sin alterar importes, destinos conocidos ni originales', () => {
+    const fuelRows = [{ ...rows[0], moduleName: 'Combustible' }];
+    const source = monthlyMovement('ruta', { module: 'Combustible' });
+    const snapshot = buildMonthlyActivity('2026-08', fuelRows, [source], monthlyCutoff);
+    const before = JSON.stringify(snapshot);
+    const result = recoverMonthlyDestinations(snapshot, [{ ...source, labor: 'Recorridos' }]);
+    expect(result.recoveredCount).toBe(1);
+    expect(result.snapshot.rows[0].destinationLot).toBe(FUEL_ROUTE_DESTINATION);
+    expect(JSON.stringify(snapshot)).toBe(before);
+    expect(result.snapshot.rows[0]).toEqual({ ...snapshot.rows[0], destinationLot: FUEL_ROUTE_DESTINATION });
+    expect(groupMonthlyExpenses(result.snapshot.rows, 'lot')[0]).toMatchObject({ label: FUEL_ROUTE_DESTINATION, expense: snapshot.rows[0].expense });
+    expect(recoverMonthlyDestinations(result.snapshot, [{ ...source, labor: 'Lote 25' }]).recoveredCount).toBe(0);
+    expect(recoverMonthlyDestinations(snapshot, []).recoveredCount).toBe(0);
+    expect(recoverMonthlyDestinations(snapshot, [{ ...source, labor: 'Recorridos', quantity: 500 }]).recoveredCount).toBe(0);
+    expect(recoverMonthlyDestinations(snapshot, [{ ...source, labor: 'Recorridos' }, { ...source, labor: 'Lote 20' }]).recoveredCount).toBe(0);
+  });
+
   it('respeta el mes de Bogotá y el corte, deduplica y excluye Taller, ajustes y cantidades inválidas', () => {
     const snapshot = buildMonthlyActivity('2026-08', rows, [
       monthlyMovement('salida'), monthlyMovement('salida'),

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign } from 'lucide-react';
 import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation/models';
 import {
-  buildMonthlyActivity, formatMonthlyActivityDate, groupMonthlyExpenses, isPersonnelExpense, summarizeMonthlyActivity,
+  buildMonthlyActivity, formatMonthlyActivityDate, groupMonthlyExpenses, isPersonnelExpense, recoverMonthlyDestinations, summarizeMonthlyActivity,
   type ExpenseGrouping, type MonthlyActivityRow, type MonthlyActivitySnapshot, type MonthlyActivitySource,
 } from '../valuation/monthlyActivity';
 import { loadMonthlyActivity } from '../valuation/monthlyActivityStorage';
@@ -60,7 +60,9 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
     if (summary.activity || !itemsReady || !historyReady || !summary.createdAt) return null;
     return buildMonthlyActivity(summary.period, items.map((item) => ({ ...item, valuationId: item.id, includesOccupied: false })), sources, summary.createdAt);
   }, [historyReady, items, itemsReady, sources, summary]);
-  const snapshot = summary.activity ? stored : reconstructed;
+  const recovered = useMemo(() => summary.activity && stored && historyReady
+    ? recoverMonthlyDestinations(stored, sources) : null, [summary.activity, stored, historyReady, sources]);
+  const snapshot = summary.activity ? recovered?.snapshot ?? stored : reconstructed;
   const totals = useMemo(() => snapshot ? summarizeMonthlyActivity(snapshot.rows) : null, [snapshot]);
   const groups = useMemo(() => snapshot ? groupMonthlyExpenses(snapshot.rows, grouping) : [], [snapshot, grouping]);
   const filteredGroups = groups.filter((group) => `${group.label} ${group.rows.map((row) => `${row.moduleName} ${row.code} ${row.product} ${row.recipientName} ${row.destinationLot}`).join(' ')}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
@@ -81,6 +83,7 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
   };
 
   return <section className="monthly-activity">
+    {Boolean(recovered?.recoveredCount) && <p className="monthly-activity-note">{recovered?.recoveredCount} destinos recuperados del historial actual para esta consulta. El corte guardado, sus cantidades y sus valores no se modificaron.</p>}
     <p className="monthly-activity-note"><strong>{summary.activity ? 'Detalle guardado en el corte.' : 'Reconstruido desde el historial actual.'}</strong> Hasta {new Date(snapshot.cutoffAt).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}. Gasto estimado con los precios unitarios guardados en ese corte; no es costo histórico por salida. Taller excluido.</p>
     {view === 'movements' ? <div className="monthly-activity-kpis">
       <article className="valuation-summary-card valued"><ArrowDownToLine size={24} /><div><span>Entradas del mes</span><strong>{totals.entryCount}</strong><small>{unitTotals('entry')}</small></div></article>

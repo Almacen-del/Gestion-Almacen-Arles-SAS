@@ -10,6 +10,8 @@ export type MonthlyActivitySource = InventoryAnalysisSourceMovement & {
   destinationLot?: string;
   observations?: string;
   zone?: string;
+  labor?: string;
+  front?: string;
   recipientId?: string;
   recipientName?: string;
 };
@@ -43,20 +45,49 @@ export type MonthlyActivitySnapshot = {
 };
 
 export const UNKNOWN_DESTINATION_LOT = 'Sin lote de destino';
+export const FUEL_ROUTE_DESTINATION = 'recorrido salida/PLANTACION';
+
+function isRouteLabel(value: string | undefined) {
+  return /^recorridos?[.,;]?$/.test(normalizeMovementText(value ?? ''));
+}
 
 export function destinationLotOf(source: MonthlyActivitySource) {
   const explicit = source.destinationLot?.trim();
+  const destinationTexts = [source.observations, source.zone, source.labor, source.front];
+  const fuelRoute = normalizeMovementText(source.module) === 'combustible'
+    && (isRouteLabel(explicit) || destinationTexts.some(isRouteLabel));
   // El lote de fabricación y los lotes FEFO no son destinos del consumo.
-  const labelled = [source.observations, source.zone].flatMap((text) => {
+  const labelled = destinationTexts.flatMap((text) => {
     const match = /\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))([^;|\n·]+)/i.exec(text ?? '');
     return match ? [match[1]
       .split(/\s+\b(?:responsable|fecha|cargo|registro|hora)\b\s*:?/i)[0]
       .split(/\s+\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i)[0]
       .trim()] : [];
   })[0];
-  const value = (explicit || labelled || '').replace(/^lotes?\s*[:=#]?\s*/i, '').replace(/\s+/g, ' ').replace(/[.,;]+$/, '').trim();
+  const value = (explicit || labelled || (fuelRoute ? FUEL_ROUTE_DESTINATION : '')).replace(/^lotes?\s*[:=#]?\s*/i, '').replace(/\s+/g, ' ').replace(/[.,;]+$/, '').trim();
+  if (fuelRoute && isRouteLabel(value)) return FUEL_ROUTE_DESTINATION;
   return !value || /^(?:n\/?a|sin (?:lote|asignar)|no registrado)$/i.test(value)
     ? UNKNOWN_DESTINATION_LOT : value;
+}
+
+// Display-only recovery for earlier cuts: never replace a known destination or
+// recalculate their amounts. Require the same original movement, not a product match.
+export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, sources: readonly MonthlyActivitySource[]) {
+  const byId = new Map<string, MonthlyActivitySource | null>();
+  sources.forEach((source) => byId.set(source.id, byId.has(source.id) ? null : source));
+  let recoveredCount = 0;
+  const rows = snapshot.rows.map((row) => {
+    if (row.kind !== 'exit' || (row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT)) return row;
+    const source = byId.get(row.id);
+    if (!source || normalizeMovementText(source.module) !== normalizeMovementText(row.moduleName)
+      || classifyInventoryMovementType(source.type) !== row.kind || source.quantity !== row.quantity
+      || movementTime(source.occurredAt) !== movementTime(row.occurredAt)) return row;
+    const destinationLot = destinationLotOf(source);
+    if (destinationLot === UNKNOWN_DESTINATION_LOT) return row;
+    recoveredCount += 1;
+    return { ...row, destinationLot };
+  });
+  return { snapshot: recoveredCount ? { ...snapshot, rows } : snapshot, recoveredCount };
 }
 
 function movementTime(value: string) {

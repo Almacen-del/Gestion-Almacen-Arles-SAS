@@ -85,19 +85,99 @@ function monthlyMovement(id: string, overrides: Partial<MonthlyActivitySource> =
 }
 const monthlyCutoff = new Date('2026-08-26T18:00:00Z');
 
+function placeMovement(id: string, overrides: Partial<MonthlyActivitySource> = {}) {
+  return monthlyMovement(id, { module: 'Combustible', ...overrides });
+}
+
 describe('actividad y desglose del gasto mensual', () => {
-  it('lee los lotes escritos en Labor/Frente y reconoce Recorridos de combustible', () => {
-    expect(destinationLotOf(monthlyMovement('11', { labor: 'Plateo mecánico lote 11' }))).toBe('11');
-    expect(destinationLotOf(monthlyMovement('17', { front: 'Roto speed lote 17' }))).toBe('17');
-    for (const label of ['Recorridos', ' recorrido ', 'RECORRIDOS.']) {
-      expect(destinationLotOf(monthlyMovement('ruta', { module: 'Combustible', labor: label }))).toBe(FUEL_ROUTE_DESTINATION);
+  it('aplica la confirmación Personal solo a la salida específica de ASEO verificada', () => {
+    const confirmed = monthlyMovement('L3chGysCdni8a44RLDZr', {
+      module: 'ASEO', code: 'H04-004', name: 'Bolsa de basura negra 65x100 cm', quantity: 1,
+      occurredAt: '2026-08-01 06:37', observations: 'Ubicacion: Piso 4', labor: 'Salida', recipientName: 'Dennis bastidas',
+    });
+    expect(destinationLotOf(confirmed)).toBe('Personal');
+    for (const override of [{ id: 'otra-salida' }, { type: 'Entrada' }, { quantity: 2 }, { occurredAt: '2026-08-02 06:37' }, { code: 'H04-003' }]) {
+      expect(destinationLotOf({ ...confirmed, ...override })).toBe('Sin lote de destino');
     }
-    expect(destinationLotOf(monthlyMovement('frente', { module: 'Combustible', front: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
-    expect(destinationLotOf(monthlyMovement('explicit', { module: 'Combustible', destinationLot: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
-    expect(destinationLotOf(monthlyMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe('8');
-    expect(destinationLotOf(monthlyMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe('9');
-    expect(destinationLotOf(monthlyMovement('otro', { module: 'EPP', labor: 'Recorridos' }))).toBe('Sin lote de destino');
-    expect(destinationLotOf(monthlyMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía' }))).toBe('Sin lote de destino');
+    const current = buildMonthlyActivity('2026-08', [], [confirmed], monthlyCutoff);
+    const saved = { ...current, rows: [{ ...current.rows[0], destinationLot: 'Piso 4' }] };
+    const corrected = recoverMonthlyDestinations(saved, []);
+    expect(corrected.personalCount).toBe(1);
+    expect(corrected.snapshot.rows[0]).toEqual({ ...saved.rows[0], destinationLot: 'Personal' });
+    expect(saved.rows[0].destinationLot).toBe('Piso 4');
+  });
+
+  it('asigna Personal a todas las salidas de Consumibles, Dotación y EPP sin modificar el destinatario', () => {
+    for (const module of ['Consumibles', 'CONSUMIBLES', 'Dotación', 'dotacion', 'EPP']) {
+      for (const type of ['Salida', 'Entrega', 'Consumo']) {
+        expect(destinationLotOf(monthlyMovement('personal', { module, type, destinationLot: 'Lote 11', labor: 'Cocina' }))).toBe('Personal');
+      }
+      expect(destinationLotOf(monthlyMovement('entrada', { module, type: 'Entrada', destinationLot: 'Lote 11' }))).toBe('11');
+    }
+    const source = monthlyMovement('personal', { recipientId: 'p-1', recipientName: 'Persona de prueba' });
+    const current = buildMonthlyActivity('2026-08', rows, [source], monthlyCutoff);
+    expect(current.rows[0]).toMatchObject({ destinationLot: 'Personal', recipientId: 'p-1', recipientName: 'Persona de prueba', expense: 5000 });
+    const saved = { ...current, rows: [{ ...current.rows[0], destinationLot: 'Taller' }] };
+    const before = JSON.stringify(saved);
+    const corrected = recoverMonthlyDestinations(saved, []);
+    expect(corrected.personalCount).toBe(1);
+    expect(corrected.snapshot.rows[0]).toEqual({ ...saved.rows[0], destinationLot: 'Personal' });
+    expect(JSON.stringify(saved)).toBe(before);
+    expect(groupMonthlyExpenses(corrected.snapshot.rows, 'lot')[0]).toMatchObject({ label: 'Personal', expense: 5000 });
+    expect(recoverMonthlyDestinations(corrected.snapshot, []).personalCount).toBe(0);
+    const entry = { ...saved, rows: [{ ...saved.rows[0], kind: 'entry' as const }] };
+    expect(recoverMonthlyDestinations(entry, []).snapshot).toBe(entry);
+  });
+
+  it('no usa el piso de almacenamiento de ASEO como destino ni lo deduce por destinatario', () => {
+    for (const floor of ['Piso 0', 'Piso 00', 'Piso 4', 'PISO 04']) {
+      const source = monthlyMovement('aseo', { module: 'ASEO', observations: `Ubicación: ${floor}`, reference: floor });
+      expect(destinationLotOf({ ...source, labor: 'Cocina' })).toBe('Cocina');
+      expect(destinationLotOf({ ...source, labor: 'Salida', recipientName: 'Dennis bastidas' })).toBe('Sin lote de destino');
+      expect(destinationLotOf({ ...source, labor: 'Salida', recipientName: 'Elena Quevedo' })).toBe('Sin lote de destino');
+      expect(destinationLotOf({ ...source, destinationLot: floor, labor: 'Cocina' })).toBe('Cocina');
+    }
+    expect(destinationLotOf(placeMovement('etiquetas', { module: 'ASEO', observations: 'Ubicacion: Piso 4; Destino: Portería' }))).toBe('Portería');
+    expect(destinationLotOf(placeMovement('destino-real', { module: 'ASEO', observations: 'Ubicacion: Piso 0', destinationLot: 'Comedor', labor: 'Cocina' }))).toBe('Comedor');
+    expect(destinationLotOf(placeMovement('otro-modulo', { module: 'Combustible', destinationLot: 'Piso 4' }))).toBe('Piso 4');
+  });
+
+  it('corrige pisos en cortes anteriores sin reescribirlos, alterar totales ni inventar el destino faltante', () => {
+    const aseoRows = [{ ...rows[0], moduleName: 'ASEO' }];
+    const sources = [
+      monthlyMovement('cocina', { module: 'ASEO', observations: 'Ubicacion: Piso 0', labor: 'Cocina' }),
+      monthlyMovement('otro-destino', { module: 'ASEO', observations: 'Ubicacion: Piso 4', labor: 'Salida' }),
+    ];
+    const generated = buildMonthlyActivity('2026-08', aseoRows, sources, monthlyCutoff);
+    const saved = { ...generated, rows: generated.rows.map((row) => ({ ...row, destinationLot: row.id === 'cocina' ? 'Piso 0' : 'Piso 4' })) };
+    const before = JSON.stringify(saved);
+    const result = recoverMonthlyDestinations(saved, sources);
+    expect(result.recoveredCount).toBe(1);
+    expect(result.discardedStorageCount).toBe(2);
+    expect(result.snapshot.rows.find((row) => row.id === 'cocina')?.destinationLot).toBe('Cocina');
+    expect(result.snapshot.rows.find((row) => row.id === 'otro-destino')?.destinationLot).toBe('Sin lote de destino');
+    expect(JSON.stringify(saved)).toBe(before);
+    expect(summarizeMonthlyActivity(result.snapshot.rows).estimatedExpense).toBe(summarizeMonthlyActivity(saved.rows).estimatedExpense);
+    for (const row of result.snapshot.rows) expect(row).toEqual({ ...saved.rows.find((original) => original.id === row.id), destinationLot: row.destinationLot });
+    const withoutSources = recoverMonthlyDestinations(saved, []);
+    expect(withoutSources.recoveredCount).toBe(0);
+    expect(withoutSources.discardedStorageCount).toBe(2);
+    expect(withoutSources.snapshot.rows.every((row) => row.destinationLot === 'Sin lote de destino')).toBe(true);
+    expect(groupMonthlyExpenses(result.snapshot.rows, 'lot').some((group) => group.label.startsWith('Piso'))).toBe(false);
+  });
+
+  it('lee los lotes escritos en Labor/Frente y reconoce Recorridos de combustible', () => {
+    expect(destinationLotOf(placeMovement('11', { labor: 'Plateo mecánico lote 11' }))).toBe('11');
+    expect(destinationLotOf(placeMovement('17', { front: 'Roto speed lote 17' }))).toBe('17');
+    for (const label of ['Recorridos', ' recorrido ', 'RECORRIDOS.']) {
+      expect(destinationLotOf(placeMovement('ruta', { module: 'Combustible', labor: label }))).toBe(FUEL_ROUTE_DESTINATION);
+    }
+    expect(destinationLotOf(placeMovement('frente', { module: 'Combustible', front: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
+    expect(destinationLotOf(placeMovement('explicit', { module: 'Combustible', destinationLot: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
+    expect(destinationLotOf(placeMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe('8');
+    expect(destinationLotOf(placeMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe('9');
+    expect(destinationLotOf(placeMovement('otro', { module: 'Agroquimicos', labor: 'Recorridos' }))).toBe('Sin lote de destino');
+    expect(destinationLotOf(placeMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía' }))).toBe('Sin lote de destino');
   });
 
   it('reconoce lugares en Labor/Frente, zona y notas y unifica las variantes de COP', () => {
@@ -110,24 +190,24 @@ describe('actividad y desglose del gasto mensual', () => {
     ];
     for (const [text, expected] of cases) {
       for (const field of ['labor', 'front', 'zone', 'observations'] as const) {
-        expect(destinationLotOf(monthlyMovement('lugar', { [field]: text }))).toBe(expected);
+        expect(destinationLotOf(placeMovement('lugar', { [field]: text }))).toBe(expected);
       }
     }
-    expect(destinationLotOf(monthlyMovement('directo', { destinationLot: 'COP', labor: 'Cocina' }))).toBe('COP (Centro de Operaciones)');
-    expect(destinationLotOf(monthlyMovement('numerado', { labor: 'Energía COP', zone: 'Lote 17' }))).toBe('17');
-    expect(destinationLotOf(monthlyMovement('preciso', { observations: 'Destino: Taller 2', labor: 'Taller' }))).toBe('Taller 2');
+    expect(destinationLotOf(placeMovement('directo', { destinationLot: 'COP', labor: 'Cocina' }))).toBe('COP (Centro de Operaciones)');
+    expect(destinationLotOf(placeMovement('numerado', { labor: 'Energía COP', zone: 'Lote 17' }))).toBe('17');
+    expect(destinationLotOf(placeMovement('preciso', { observations: 'Destino: Taller 2', labor: 'Taller' }))).toBe('Taller 2');
   });
 
   it('no convierte labores genéricas, importes, negaciones ni destinos ambiguos en lugares', () => {
     for (const text of ['Plateo mecánico', 'Energía', '20.000 COP', 'COP 20000', 'Sin cocina', 'Transporte desde taller', 'taller y cocina', 'Taller 2', 'Taller 2 y cocina', 'copias']) {
-      expect(destinationLotOf(monthlyMovement('no-lugar', { labor: text }))).toBe('Sin lote de destino');
+      expect(destinationLotOf(placeMovement('no-lugar', { labor: text }))).toBe('Sin lote de destino');
     }
-    expect(destinationLotOf(monthlyMovement('ambiguo', { labor: 'Taller', front: 'Comedor' }))).toBe('Sin lote de destino');
+    expect(destinationLotOf(placeMovement('ambiguo', { labor: 'Taller', front: 'Comedor' }))).toBe('Sin lote de destino');
   });
 
   it('agrupa COP y Centro de Operaciones juntos y recupera lugares sin modificar el corte', () => {
-    const sources = [monthlyMovement('cop'), monthlyMovement('centro'), monthlyMovement('cocina')];
-    const original = buildMonthlyActivity('2026-08', rows, sources, monthlyCutoff);
+    const sources = [placeMovement('cop'), placeMovement('centro'), placeMovement('cocina')];
+    const original = buildMonthlyActivity('2026-08', rows.map((row) => ({ ...row, moduleName: 'Combustible' })), sources, monthlyCutoff);
     const recovered = recoverMonthlyDestinations(original, sources.map((source, index) => ({ ...source, labor: ['Energía COP', 'Centro de Operaciones', 'Cocina'][index] })));
     expect(recovered.recoveredCount).toBe(3);
     expect(groupMonthlyExpenses(recovered.snapshot.rows, 'lot').map(({ label, expense }) => ({ label, expense }))).toEqual([
@@ -172,10 +252,10 @@ describe('actividad y desglose del gasto mensual', () => {
   });
 
   it('usa el precio del corte y conserva salidas no identificadas o sin precio sin inventar valores', () => {
-    const snapshot = buildMonthlyActivity('2026-08', rows, [
-      monthlyMovement('valorada', { observations: 'Lote: 15; Responsable: Luis' }),
-      monthlyMovement('sin-precio', { code: 'P2', name: 'Producto dos', destinationLot: 'Lote 15' }),
-      monthlyMovement('no-identificada', { code: '?', name: '?' }),
+    const snapshot = buildMonthlyActivity('2026-08', rows.map((row) => ({ ...row, moduleName: 'Combustible' })), [
+      placeMovement('valorada', { observations: 'Lote: 15; Responsable: Luis' }),
+      placeMovement('sin-precio', { code: 'P2', name: 'Producto dos', destinationLot: 'Lote 15' }),
+      placeMovement('no-identificada', { code: '?', name: '?' }),
     ], monthlyCutoff);
     expect(summarizeMonthlyActivity(snapshot.rows)).toMatchObject({ estimatedExpense: 5_000, exitCount: 3, unpricedExitCount: 2 });
     const byLot = groupMonthlyExpenses(snapshot.rows, 'lot');
@@ -183,10 +263,10 @@ describe('actividad y desglose del gasto mensual', () => {
     for (const grouping of ['lot', 'module', 'product'] as const) {
       expect(groupMonthlyExpenses(snapshot.rows, grouping).reduce((sum, group) => sum + group.expense, 0)).toBe(5_000);
     }
-    expect(destinationLotOf(monthlyMovement('zona', { zone: 'Lote 7' }))).toBe('7');
-    expect(destinationLotOf(monthlyMovement('nota-real', { observations: 'Lote 3 12 de agosto' }))).toBe('3');
-    expect(destinationLotOf(monthlyMovement('varios', { observations: 'Lotes: 1 y 2; entrega' }))).toBe('1 y 2');
-    expect(destinationLotOf(monthlyMovement('sin-lote'))).toBe('Sin lote de destino');
+    expect(destinationLotOf(placeMovement('zona', { zone: 'Lote 7' }))).toBe('7');
+    expect(destinationLotOf(placeMovement('nota-real', { observations: 'Lote 3 12 de agosto' }))).toBe('3');
+    expect(destinationLotOf(placeMovement('varios', { observations: 'Lotes: 1 y 2; entrega' }))).toBe('1 y 2');
+    expect(destinationLotOf(placeMovement('sin-lote'))).toBe('Sin lote de destino');
   });
 
   it('convierte unidades compatibles para valorar, sin mezclar cantidades ni cobrar una unidad incompatible', () => {

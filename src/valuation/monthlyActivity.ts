@@ -46,6 +46,19 @@ export type MonthlyActivitySnapshot = {
 
 export const UNKNOWN_DESTINATION_LOT = 'Sin lote de destino';
 export const FUEL_ROUTE_DESTINATION = 'recorrido salida/PLANTACION';
+export const PERSONAL_DESTINATION = 'Personal';
+
+function usesPersonalDestination(moduleName: string) {
+  return ['consumibles', 'dotacion', 'epp'].includes(normalizeMovementText(moduleName));
+}
+
+function isConfirmedPersonalAseoExit(id: string, moduleName: string, code: string, quantity: number, occurredAt: string) {
+  // User confirmation, 2026-08-26: this specific ASEO delivery (one H04-004,
+  // 2026-08-01) is Personal. Do not infer destinations for other people or "Salida" notes.
+  return id === 'L3chGysCdni8a44RLDZr' && normalizeMovementText(moduleName) === 'aseo'
+    && code.trim().toUpperCase() === 'H04-004' && quantity === 1
+    && movementDateKey(occurredAt) === '2026-08-01';
+}
 
 function isRouteLabel(value: string | undefined) {
   return /^recorridos?[.,;]?$/.test(normalizeMovementText(value ?? ''));
@@ -63,6 +76,12 @@ function canonicalDestination(value: string) {
   if (!key || /^(?:n\/?a|sin (?:lote(?: de destino)?|asignar|destino)|no registrado)$/.test(key)) return '';
   if (/^(?:c\.?o\.?p\.?|centro de operaciones|cop\s*\(centro de operaciones\))$/.test(key)) return 'COP (Centro de Operaciones)';
   return ({ taller: 'Taller', cocina: 'Cocina', comedor: 'Comedor' } as Record<string, string>)[key] || clean;
+}
+
+function isStorageFloorDestination(moduleName: string, value: string) {
+  // ASEO's Piso is the product's storage reference, not where it was delivered.
+  return normalizeMovementText(moduleName) === 'aseo'
+    && /^piso\s*[-:#]?\s*\d+$/.test(normalizeMovementText(cleanDestination(value)));
 }
 
 function namedDestination(texts: readonly (string | undefined)[]) {
@@ -88,39 +107,53 @@ function namedDestination(texts: readonly (string | undefined)[]) {
 }
 
 export function destinationLotOf(source: MonthlyActivitySource) {
-  const explicit = canonicalDestination(source.destinationLot ?? '');
+  if (classifyInventoryMovementType(source.type) === 'exit'
+    && (usesPersonalDestination(source.module)
+      || isConfirmedPersonalAseoExit(source.id, source.module, source.code ?? '', source.quantity, source.occurredAt))) return PERSONAL_DESTINATION;
+  const readDestination = (value: string) => isStorageFloorDestination(source.module, value) ? '' : canonicalDestination(value);
+  const explicit = readDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
   const fuelRoute = normalizeMovementText(source.module) === 'combustible'
     && (isRouteLabel(explicit) || destinationTexts.some(isRouteLabel));
   // El lote de fabricación y los lotes FEFO no son destinos del consumo.
   const labelled = destinationTexts.flatMap((text) => {
-    const match = /(?:\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))|\b(?:destino|lugar|ubicaci[oó]n|zona)\s*[:=#]\s*)([^;|\n·]+)/i.exec(text ?? '');
-    const value = match ? canonicalDestination(match[1]) : '';
-    return value ? [value] : [];
+    const matches = (text ?? '').matchAll(/(?:\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))|\b(?:destino|lugar|ubicaci[oó]n|zona)\s*[:=#]\s*)([^;|\n·]+)/gi);
+    return [...matches].map((match) => readDestination(match[1])).filter(Boolean);
   })[0];
   const value = explicit || labelled || namedDestination(destinationTexts) || (fuelRoute ? FUEL_ROUTE_DESTINATION : '');
   if (fuelRoute && isRouteLabel(value)) return FUEL_ROUTE_DESTINATION;
   return value || UNKNOWN_DESTINATION_LOT;
 }
 
-// Display-only recovery for earlier cuts: never replace a known destination or
-// recalculate their amounts. Require the same original movement, not a product match.
+// Display-only destination rules: Personal for the user-designated modules; no ASEO
+// storage floors. Preserve amounts and recover other destinations only from the same movement.
 export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, sources: readonly MonthlyActivitySource[]) {
   const byId = new Map<string, MonthlyActivitySource | null>();
   sources.forEach((source) => byId.set(source.id, byId.has(source.id) ? null : source));
   let recoveredCount = 0;
+  let discardedStorageCount = 0;
+  let personalCount = 0;
   const rows = snapshot.rows.map((row) => {
-    if (row.kind !== 'exit' || (row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT)) return row;
+    if (row.kind !== 'exit') return row;
+    if (usesPersonalDestination(row.moduleName)
+      || isConfirmedPersonalAseoExit(row.id, row.moduleName, row.code, row.quantity, row.occurredAt)) {
+      if (row.destinationLot === PERSONAL_DESTINATION) return row;
+      personalCount += 1;
+      return { ...row, destinationLot: PERSONAL_DESTINATION };
+    }
+    const storageFloor = isStorageFloorDestination(row.moduleName, row.destinationLot);
+    if (!storageFloor && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) return row;
     const source = byId.get(row.id);
-    if (!source || normalizeMovementText(source.module) !== normalizeMovementText(row.moduleName)
-      || classifyInventoryMovementType(source.type) !== row.kind || source.quantity !== row.quantity
-      || movementTime(source.occurredAt) !== movementTime(row.occurredAt)) return row;
-    const destinationLot = destinationLotOf(source);
-    if (destinationLot === UNKNOWN_DESTINATION_LOT) return row;
-    recoveredCount += 1;
+    const sameMovement = source && normalizeMovementText(source.module) === normalizeMovementText(row.moduleName)
+      && classifyInventoryMovementType(source.type) === row.kind && source.quantity === row.quantity
+      && movementTime(source.occurredAt) === movementTime(row.occurredAt);
+    const destinationLot = sameMovement ? destinationLotOf(source) : UNKNOWN_DESTINATION_LOT;
+    if (destinationLot === UNKNOWN_DESTINATION_LOT && !storageFloor) return row;
+    if (storageFloor) discardedStorageCount += 1;
+    if (destinationLot !== UNKNOWN_DESTINATION_LOT) recoveredCount += 1;
     return { ...row, destinationLot };
   });
-  return { snapshot: recoveredCount ? { ...snapshot, rows } : snapshot, recoveredCount };
+  return { snapshot: recoveredCount || discardedStorageCount || personalCount ? { ...snapshot, rows } : snapshot, recoveredCount, discardedStorageCount, personalCount };
 }
 
 function movementTime(value: string) {

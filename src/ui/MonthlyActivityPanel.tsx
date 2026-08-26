@@ -60,8 +60,8 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
     if (summary.activity || !itemsReady || !historyReady || !summary.createdAt) return null;
     return buildMonthlyActivity(summary.period, items.map((item) => ({ ...item, valuationId: item.id, includesOccupied: false })), sources, summary.createdAt);
   }, [historyReady, items, itemsReady, sources, summary]);
-  const recovered = useMemo(() => summary.activity && stored && historyReady
-    ? recoverMonthlyDestinations(stored, sources) : null, [summary.activity, stored, historyReady, sources]);
+  const recovered = useMemo(() => summary.activity && stored
+    ? recoverMonthlyDestinations(stored, historyReady ? sources : []) : null, [summary.activity, stored, historyReady, sources]);
   const snapshot = summary.activity ? recovered?.snapshot ?? stored : reconstructed;
   const totals = useMemo(() => snapshot ? summarizeMonthlyActivity(snapshot.rows) : null, [snapshot]);
   const groups = useMemo(() => snapshot ? groupMonthlyExpenses(snapshot.rows, grouping) : [], [snapshot, grouping]);
@@ -83,6 +83,8 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
   };
 
   return <section className="monthly-activity">
+    {Boolean(recovered?.personalCount) && <p className="monthly-activity-note">Destino Personal aplicado a Consumibles, Dotación, EPP y entregas específicas confirmadas, conservando quién recibió cada entrega. El corte original no se modifica.</p>}
+    {Boolean(recovered?.discardedStorageCount) && <p className="monthly-activity-note">Los pisos de almacenamiento de ASEO no se usan como destino de salida. Si no consta un destino real, la entrega queda sin destino identificado. El corte original no se modifica.</p>}
     {Boolean(recovered?.recoveredCount) && <p className="monthly-activity-note">{recovered?.recoveredCount} destinos recuperados del historial actual para esta consulta. El corte guardado, sus cantidades y sus valores no se modificaron.</p>}
     <p className="monthly-activity-note"><strong>{summary.activity ? 'Detalle guardado en el corte.' : 'Reconstruido desde el historial actual.'}</strong> Hasta {new Date(snapshot.cutoffAt).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}. Gasto estimado con los precios unitarios guardados en ese corte; no es costo histórico por salida. Taller excluido.</p>
     {view === 'movements' ? <div className="monthly-activity-kpis">

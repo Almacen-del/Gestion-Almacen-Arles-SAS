@@ -189,6 +189,7 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
   let discardedStorageCount = 0;
   let personalCount = 0;
   let machineryCount = 0;
+  let unitCompatibilityCount = 0;
   const rows = snapshot.rows.map((originalRow) => {
     let row = originalRow;
     const source = byId.get(row.id);
@@ -198,6 +199,13 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
     if (!row.machinery?.trim() && sameMovement && source.machinery?.trim()) {
       row = { ...row, machinery: source.machinery.trim() };
       machineryCount += 1;
+    }
+    if (row.kind === 'exit' && row.issue === 'Unidad incompatible' && row.unitValue !== null) {
+      const pricedQuantity = quantityAtPriceUnit(row.quantity, row.unit, row.priceUnit);
+      if (pricedQuantity !== null) {
+        row = { ...row, expense: pricedQuantity * row.unitValue, issue: '' };
+        unitCompatibilityCount += 1;
+      }
     }
     if (row.kind !== 'exit') return row;
     if (usesPersonalDestination(row.moduleName)
@@ -225,7 +233,10 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
     if (destinationLot !== UNKNOWN_DESTINATION_LOT) recoveredCount += 1;
     return { ...row, destinationLot };
   });
-  return { snapshot: recoveredCount || discardedStorageCount || personalCount || machineryCount ? { ...snapshot, rows } : snapshot, recoveredCount, discardedStorageCount, personalCount, machineryCount };
+  return {
+    snapshot: recoveredCount || discardedStorageCount || personalCount || machineryCount || unitCompatibilityCount ? { ...snapshot, rows } : snapshot,
+    recoveredCount, discardedStorageCount, personalCount, machineryCount, unitCompatibilityCount,
+  };
 }
 
 function movementTime(value: string) {
@@ -251,6 +262,7 @@ function unitKey(unit: string) {
   if (['ml', 'mililitro', 'mililitros'].includes(key)) return 'ml';
   if (['l', 'lt', 'litro', 'litros'].includes(key)) return 'l';
   if (['u', 'und', 'unidad', 'unidades'].includes(key)) return 'unidad';
+  if (['par', 'pares'].includes(key)) return 'par';
   return key;
 }
 
@@ -258,6 +270,7 @@ function quantityAtPriceUnit(quantity: number, from: string, to: string) {
   const source = unitKey(from);
   const target = unitKey(to);
   if (source && source === target) return quantity;
+  if ((source === 'unidad' && target === 'par') || (source === 'par' && target === 'unidad')) return quantity;
   if ((source === 'kg' && target === 'g') || (source === 'l' && target === 'ml')) return quantity * 1000;
   if ((source === 'g' && target === 'kg') || (source === 'ml' && target === 'l')) return quantity / 1000;
   return null;

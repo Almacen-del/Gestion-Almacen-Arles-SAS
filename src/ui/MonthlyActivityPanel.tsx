@@ -1,12 +1,14 @@
 import ColumnFilterTable from './ColumnFilterTable';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign, FileSpreadsheet } from 'lucide-react';
 import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation/models';
 import {
   buildMonthlyActivity, formatDestinationLot, formatMonthlyActivityDate, groupMonthlyExpenses, isPersonnelExpense, recoverMonthlyDestinations, summarizeMonthlyActivity,
   type ExpenseGrouping, type MonthlyActivityRow, type MonthlyActivitySnapshot, type MonthlyActivitySource,
 } from '../valuation/monthlyActivity';
 import { loadMonthlyActivity } from '../valuation/monthlyActivityStorage';
+import { generateMonthlyActivityExcel, monthlyActivityExcelFilename } from '../platform/monthlyActivityExcelExport';
+import { downloadExcelFile } from '../platform/browserPlatform';
 
 const amount = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value);
 const number = (value: number) => new Intl.NumberFormat('es-CO', { maximumFractionDigits: 3 }).format(value);
@@ -46,6 +48,8 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
   const [kind, setKind] = useState('all');
   const [search, setSearch] = useState('');
   const [visibleGroups, setVisibleGroups] = useState(30);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -82,8 +86,30 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
     snapshot.rows.filter((row) => row.kind === type).forEach((row) => units.set(row.unit, (units.get(row.unit) ?? 0) + row.quantity));
     return [...units].map(([unit, quantity]) => `${number(quantity)} ${unit}`).join(' · ') || 'Sin movimientos';
   };
+  const exportCompleteReport = async () => {
+    if (!itemsReady || !historyReady || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const bytes = await generateMonthlyActivityExcel({ summary, items, snapshot, generatedBy: summary.createdBy });
+      downloadExcelFile(bytes, monthlyActivityExcelFilename(summary.period));
+    } catch (cause) {
+      console.error('No se pudo exportar el histórico mensual:', cause);
+      setExportError('No se pudo generar el Excel del histórico mensual. Vuelve a intentarlo.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return <section className="monthly-activity">
+    <div className="monthly-activity-export-row">
+      <p className="monthly-activity-note">El Excel incluye el corte completo, sus movimientos, gastos, personas y gráficas; los filtros visibles no limitan la exportación.</p>
+      <button type="button" className="tool-button" disabled={!itemsReady || !historyReady || exporting} onClick={() => { void exportCompleteReport(); }}>
+        <FileSpreadsheet size={17} />
+        {exporting ? 'Generando Excel...' : !itemsReady || !historyReady ? 'Preparando Excel...' : 'Exportar informe completo'}
+      </button>
+    </div>
+    {exportError && <div className="alert-line">{exportError}</div>}
     {Boolean(recovered && (recovered.personalCount || recovered.discardedStorageCount || recovered.recoveredCount || recovered.machineryCount)) && <p className="monthly-activity-note">Destinos y maquinaria completados para esta consulta. El corte guardado, sus cantidades y sus valores no se modificaron.</p>}
     <p className="monthly-activity-note"><strong>{summary.activity ? 'Detalle guardado en el corte.' : 'Reconstruido desde el historial actual.'}</strong> Hasta {new Date(snapshot.cutoffAt).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}. Gasto estimado con los precios unitarios guardados en ese corte; no es costo histórico por salida. Taller excluido.</p>
     {view === 'movements' ? <div className="monthly-activity-kpis">

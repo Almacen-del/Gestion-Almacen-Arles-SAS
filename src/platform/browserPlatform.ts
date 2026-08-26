@@ -6,7 +6,7 @@ export const browserPlatform = {
   canExportMovementReport: true,
 };
 
-function descargarArchivo(bytes: Uint8Array, fileName: string) {
+export function downloadExcelFile(bytes: Uint8Array, fileName: string) {
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   const blob = new Blob([arrayBuffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -28,7 +28,7 @@ export async function exportMovementReportWeb(
   try {
     const bytes = await generarReporteMovimientosExcelWeb(payload);
     const fileName = payload.suggestedFileName || 'Reporte_Movimientos_ARLES.xlsx';
-    descargarArchivo(bytes, fileName);
+    downloadExcelFile(bytes, fileName);
     return {
       canceled: false,
       filePath: fileName,

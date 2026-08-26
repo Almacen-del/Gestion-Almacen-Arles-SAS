@@ -2957,6 +2957,8 @@ tbody tr:hover {
 }
 
 .monthly-activity { display: grid; gap: 14px; min-width: 0; }
+.monthly-activity-export-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.monthly-activity-export-row .tool-button { flex: 0 0 auto; }
 .monthly-activity-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .monthly-activity-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .monthly-activity-group-tabs, .monthly-activity-view-tabs { flex-wrap: wrap; }
@@ -2978,7 +2980,7 @@ tbody tr:hover {
 .monthly-activity-table td:nth-child(5) { min-width: 150px; }
 .monthly-activity-table .monthly-activity-warning { color: #9a5800; }
 .monthly-activity-more { padding: 12px; color: var(--green-700); font-weight: 800; border: 1px solid var(--line); border-radius: 8px; background: white; }
-@media (max-width: 650px) { .monthly-activity-kpis { grid-template-columns: 1fr; } .monthly-expense-group summary { padding: 12px; } }
+@media (max-width: 650px) { .monthly-activity-export-row { align-items: stretch; flex-direction: column; } .monthly-activity-kpis { grid-template-columns: 1fr; } .monthly-expense-group summary { padding: 12px; } }
 
 .entry-valuations-actions {
   display: grid;

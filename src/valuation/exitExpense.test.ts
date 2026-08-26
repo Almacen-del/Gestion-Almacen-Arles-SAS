@@ -375,13 +375,20 @@ describe('actividad y desglose del gasto mensual', () => {
 
   it('convierte unidades compatibles para valorar, sin mezclar cantidades ni cobrar una unidad incompatible', () => {
     const agroRow = { ...rows[0], unit: 'GRAMO', unitValue: 4.9, moduleName: 'Agroquímicos' };
-    const snapshot = buildMonthlyActivity('2026-08', [agroRow], [
+    const gloveRow = { ...rows[0], valuationId: 'existencias__guante', code: 'G1', product: 'Guante', unit: 'Par', unitValue: 74_550, moduleName: 'EPP' };
+    const snapshot = buildMonthlyActivity('2026-08', [agroRow, gloveRow], [
       monthlyMovement('kg', { module: 'Agroquímicos', quantity: 50, unit: 'KG' }),
       monthlyMovement('incompatible', { module: 'Agroquímicos', unit: 'Unidad' }),
+      monthlyMovement('guante', { module: 'EPP', code: 'G1', name: 'Guante', quantity: 1, unit: 'Unidad' }),
     ], monthlyCutoff);
     expect(snapshot.rows.find((row) => row.id === 'kg')).toMatchObject({ quantity: 50, unit: 'KG', priceUnit: 'GRAMO' });
     expect(snapshot.rows.find((row) => row.id === 'kg')?.expense).toBeCloseTo(245_000, 2);
     expect(snapshot.rows.find((row) => row.id === 'incompatible')).toMatchObject({ expense: null, issue: 'Unidad incompatible' });
+    expect(snapshot.rows.find((row) => row.id === 'guante')).toMatchObject({ priceUnit: 'Par', expense: 74_550, issue: '' });
+
+    const saved = { ...snapshot, rows: snapshot.rows.map((row) => row.id === 'guante' ? { ...row, expense: null, issue: 'Unidad incompatible' as const } : row) };
+    expect(recoverMonthlyDestinations(saved, []).snapshot.rows.find((row) => row.id === 'guante'))
+      .toMatchObject({ expense: 74_550, issue: '' });
   });
 
   it('agrupa Dotación y EPP por destinatario con sus productos, sin incluir otros módulos', () => {

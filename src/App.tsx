@@ -117,8 +117,10 @@ import {
   crearReporteMovimientos,
   etiquetaPeriodoReporte,
   fechaExportacionReporte,
+  leerLotesSalidaReporte,
   nombreArchivoReporte,
   type InventarioParaReporte,
+  type LoteMovimientoReporte,
 } from './reporteMovimientosExcel';
 import { browserPlatform, exportMovementReportWeb } from './platform/browserPlatform';
 import {
@@ -249,6 +251,9 @@ type Movement = {
   productDocumentId?: string;
   stockBefore?: number;
   stockAfter?: number;
+  lote?: string;
+  fechaVencimiento?: string;
+  lotesSalida?: LoteMovimientoReporte[];
 };
 
 type UserProfile = {
@@ -690,6 +695,9 @@ function readMovementDoc(doc: QueryDocumentSnapshot): Movement {
     responsableEntrega: textValue(data, 'responsable_entrega', 'registradoPor'),
     ubicacion: textValue(data, 'ubicacion'),
     productDocumentId: textValue(data, 'producto_id', 'documento_id', 'herramientaId', 'herramienta_clave') || undefined,
+    lote: textValue(data, 'numero_lote', 'lote', 'numeroLote'),
+    fechaVencimiento: dateTextValue(data, 'fecha_vencimiento', 'fechaVencimiento', 'vencimiento'),
+    lotesSalida: leerLotesSalidaReporte(data),
     stockBefore: optionalNumberValue(data, 'stock_anterior'),
     stockAfter: optionalNumberValue(data, 'stock_nuevo'),
   };
@@ -2382,12 +2390,16 @@ function AppShell({ user }: { user: User }) {
         setError('No hay inventario ni movimientos que coincidan con el módulo y los filtros activos.');
         return;
       }
+      const reportLots = isAgroquimicosModule
+        ? (await getDocsFromServer(collectionGroup(db, 'lotes_agroquimicos'))).docs.map(readAgrochemicalLotDoc)
+        : [];
       const payload = crearReporteMovimientos({
         moduleName: module,
         tallerSubmodulo: isTallerModule ? tallerSubmodulo : '',
         movimientos: reportMovements,
         historialCompleto: reconciliationHistory,
         inventarioActual: inventoryAfter.map(inventoryItemForReport),
+        lotesAgroquimicos: reportLots,
         usuarios: users,
         periodLabel: etiquetaPeriodoReporte(exitDateFrom, exitDateTo),
         exportDate: fechaExportacionReporte(),

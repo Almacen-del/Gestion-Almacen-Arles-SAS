@@ -6,10 +6,28 @@ import {
   TALLER_SUBMODULOS,
 } from './tallerCanonicos';
 import { modules } from './theme';
+import type { AgrochemicalLot } from './agrochemicalLots';
 
 export const REPORTE_MOVIMIENTOS_FILENAME = 'Reporte_Movimientos_ARLES.xlsx';
 
 export const MODULOS_ORDEN = modules;
+
+export type LoteMovimientoReporte = { numero: string; vencimiento: string; cantidad: number };
+
+export function leerLotesSalidaReporte(data: Record<string, unknown>): LoteMovimientoReporte[] {
+  if (!Array.isArray(data.lotes_salida)) return [];
+  return data.lotes_salida.flatMap((value: unknown) => {
+    if (!value || typeof value !== 'object') return [];
+    const lote = value as Record<string, unknown>;
+    const cantidad = Number(lote.cantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) return [];
+    return [{
+      numero: typeof lote.numero_lote === 'string' ? lote.numero_lote : '',
+      vencimiento: typeof lote.fecha_vencimiento === 'string' ? lote.fecha_vencimiento : '',
+      cantidad,
+    }];
+  });
+}
 
 export type MovimientoParaReporte = {
   id: string;
@@ -34,6 +52,10 @@ export type MovimientoParaReporte = {
   zona?: string;
   horometro?: string;
   responsableEntrega?: string;
+  productDocumentId?: string;
+  lote?: string;
+  fechaVencimiento?: string;
+  lotesSalida?: LoteMovimientoReporte[];
 };
 
 export type InventarioParaReporte = {
@@ -49,6 +71,10 @@ export type InventarioParaReporte = {
 };
 
 export type FilaMovimientoExcel = {
+  cantidad: number;
+  fecha_ingreso: string;
+  fecha_salida: string;
+  lotes: LoteMovimientoReporte[];
   fecha: string;
   tipo_movimiento: string;
   codigo: string;
@@ -70,6 +96,10 @@ export type FilaMovimientoExcel = {
 };
 
 export type FilaConsolidadoExcel = {
+  fecha_ingreso: string;
+  fecha_salida: string;
+  observacion: string;
+  lotes: LoteMovimientoReporte[];
   codigo: string;
   nombre_producto: string;
   submodulo: string;
@@ -284,9 +314,14 @@ function crearFilaMovimiento(
   saldoNuevo: number,
   estadoConciliacion: string,
   usuarios: UsuarioLookup,
+  lotes: LoteMovimientoReporte[],
 ): FilaMovimientoExcel {
   const contextoSubmodulo = categoria.moduleName === 'TALLER' ? (categoria.submodulo ?? '') : '';
   return {
+    cantidad: movimiento.cantidad,
+    fecha_ingreso: esEntrada(movimiento, categoria.moduleName, contextoSubmodulo) ? movimiento.fecha : '',
+    fecha_salida: esSalida(movimiento, categoria.moduleName, contextoSubmodulo) ? movimiento.fecha : '',
+    lotes,
     fecha: movimiento.fecha || 'Sin fecha',
     tipo_movimiento: movimiento.tipo || 'Movimiento',
     codigo: movimiento.codigo || 'Sin código',
@@ -387,12 +422,38 @@ function unirEstados(...estados: Array<string | undefined>) {
   return [...new Set(estados.filter((estado): estado is string => Boolean(estado)))].join(' · ');
 }
 
+function lotesDelMovimiento(
+  movimiento: MovimientoParaReporte,
+  lotes: readonly AgrochemicalLot[],
+  inventarioId?: string,
+): LoteMovimientoReporte[] {
+  if (!coincideModulo(movimiento.modulo, 'Agroquimicos')) return [];
+  if (esSalida(movimiento) && movimiento.lotesSalida?.length) return movimiento.lotesSalida;
+  if (esEntrada(movimiento)) {
+    const productId = movimiento.productDocumentId || inventarioId;
+    const asignados = lotes.flatMap((lote) => {
+      if (!productId || lote.productDocumentId !== productId) return [];
+      const cantidad = lote.entryAssignments
+        .filter((asignacion) => asignacion.entryId === movimiento.id)
+        .reduce((total, asignacion) => total + asignacion.quantity, 0);
+      return cantidad > 0
+        ? [{ numero: lote.lotNumber, vencimiento: lote.expirationDate, cantidad }]
+        : [];
+    });
+    if (asignados.length) return asignados;
+  }
+  return movimiento.lote || movimiento.fechaVencimiento
+    ? [{ numero: movimiento.lote || '', vencimiento: movimiento.fechaVencimiento || '', cantidad: movimiento.cantidad }]
+    : [];
+}
+
 function conciliarCategoria(
   movimientosVisibles: MovimientoParaReporte[],
   historialCompleto: MovimientoParaReporte[],
   inventarioActual: InventarioParaReporte[],
   categoria: CategoriaMovimiento,
   usuarios: UsuarioLookup,
+  lotes: readonly AgrochemicalLot[],
 ) {
   const porCodigo = new Map<string, InventarioParaReporte[]>();
   const porNombreReferencia = new Map<string, InventarioParaReporte[]>();
@@ -491,6 +552,7 @@ function conciliarCategoria(
           balance.nuevo,
           estadoGrupo,
           usuarios,
+          lotesDelMovimiento(movimiento, lotes, grupo.inventario?.id),
         ),
       );
     });
@@ -517,6 +579,13 @@ function conciliarCategoria(
       : saldoActual;
 
     consolidado.push({
+      fecha_ingreso: visiblesDelGrupo.filter((movimiento) => esEntrada(movimiento, categoria.moduleName, categoria.submodulo)).at(-1)?.fecha || '',
+      fecha_salida: visiblesDelGrupo.filter((movimiento) => esSalida(movimiento, categoria.moduleName, categoria.submodulo)).at(-1)?.fecha || '',
+      observacion: [...new Set(visiblesDelGrupo.map((movimiento) => movimiento.observaciones).filter(Boolean))].join('\n'),
+      lotes: coincideModulo(categoria.moduleName, 'Agroquimicos') && grupo.inventario
+        ? lotes.filter((lote) => lote.productDocumentId === grupo.inventario?.id && lote.quantity > 0)
+          .map((lote) => ({ numero: lote.lotNumber, vencimiento: lote.expirationDate, cantidad: lote.quantity }))
+        : [],
       codigo: referencia.codigo || 'Sin código',
       nombre_producto: referencia.descripcion || 'Sin descripción',
       submodulo: categoria.submodulo || categoria.moduleName,
@@ -690,6 +759,7 @@ export function crearReporteMovimientos(opciones: {
   movimientos: MovimientoParaReporte[];
   historialCompleto?: MovimientoParaReporte[];
   inventarioActual?: InventarioParaReporte[];
+  lotesAgroquimicos?: readonly AgrochemicalLot[];
   usuarios: UsuarioLookup;
   periodLabel: string;
   exportDate: string;
@@ -723,6 +793,7 @@ export function crearReporteMovimientos(opciones: {
       inventarioCategoria,
       categoria,
       opciones.usuarios,
+      opciones.lotesAgroquimicos ?? [],
     );
     const filas = conciliacion.filas;
     movimientos.forEach((movimiento, index) => {
@@ -797,4 +868,3 @@ export function crearReporteMovimientos(opciones: {
     salidasGenerales,
   };
 }
-

@@ -30,6 +30,7 @@ function readRow(value: unknown): MonthlyActivityRow {
   const row = value as MonthlyActivityRow;
   const textKeys = ['id', 'occurredAt', 'moduleName', 'productId', 'code', 'product', 'reference', 'unit', 'destinationLot', 'recipientId', 'recipientName', 'priceUnit', 'issue'] as const;
   if (textKeys.some((key) => typeof row[key] !== 'string')
+    || (row.machinery !== undefined && typeof row.machinery !== 'string')
     || !['entry', 'exit'].includes(row.kind)
     || !Number.isFinite(row.quantity) || row.quantity <= 0
     || (row.expense !== null && (!Number.isFinite(row.expense) || row.expense < 0))

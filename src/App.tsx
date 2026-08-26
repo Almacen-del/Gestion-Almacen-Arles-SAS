@@ -2150,6 +2150,7 @@ function AppShell({ user }: { user: User }) {
     productDocumentId: movement.productDocumentId,
     destinationLot: movement.destinationLot, observations: movement.observaciones, zone: movement.zona,
     labor: movement.labor, front: movement.frente,
+    machinery: movement.maquinaria,
     recipientId: users[movement.solicitante] ? `uid:${movement.solicitante}` : movement.solicitante,
     recipientName: users[movement.solicitante]?.nombre || users[movement.solicitante]?.email || movement.solicitante,
   })), [movements, users]);

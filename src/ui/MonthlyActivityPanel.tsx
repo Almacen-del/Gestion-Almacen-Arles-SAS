@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, CircleDollarSign } from 'lucide-react';
 import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation/models';
 import {
-  buildMonthlyActivity, formatMonthlyActivityDate, groupMonthlyExpenses, isPersonnelExpense, recoverMonthlyDestinations, summarizeMonthlyActivity,
+  buildMonthlyActivity, formatDestinationLot, formatMonthlyActivityDate, groupMonthlyExpenses, isPersonnelExpense, recoverMonthlyDestinations, summarizeMonthlyActivity,
   type ExpenseGrouping, type MonthlyActivityRow, type MonthlyActivitySnapshot, type MonthlyActivitySource,
 } from '../valuation/monthlyActivity';
 import { loadMonthlyActivity } from '../valuation/monthlyActivityStorage';
@@ -16,13 +16,14 @@ function MovementDetails({ rows }: { rows: readonly MonthlyActivityRow[] }) {
   return <>
     <div className="table-wrap monthly-activity-table-wrap">
       <ColumnFilterTable pageSize={50} className="inventory-table monthly-activity-table">
-        <thead><tr><th>Fecha / tipo</th><th>Producto</th><th>Módulo</th><th>Cantidad</th><th>Lote de destino / persona</th><th>Precio base</th><th>Gasto de salida</th></tr></thead>
+        <thead><tr><th>Fecha / tipo</th><th>Producto</th><th>Módulo</th><th>Cantidad</th><th>Lote de destino / persona</th><th>Maquinaria</th><th>Precio base</th><th>Gasto de salida</th></tr></thead>
         <tbody>{rows.map((row) => <tr key={row.id}>
           <td>{formatMonthlyActivityDate(row.occurredAt)}<small>{row.kind === 'entry' ? 'Entrada' : 'Salida'}</small></td>
           <td data-filter-value={row.product}><strong>{row.product}</strong><small>{row.code || 'Sin código'}{row.reference && row.reference !== 'N/A' ? ` · ${row.reference}` : ''}</small></td>
           <td>{row.moduleName}</td>
           <td className="numeric">{number(row.quantity)} {row.unit}</td>
-          <td>{row.destinationLot}<small>{row.recipientName}</small></td>
+          <td>{formatDestinationLot(row.destinationLot)}<small>{row.recipientName}</small></td>
+          <td>{row.machinery || '—'}</td>
           <td className="numeric">{row.unitValue === null ? 'Sin precio' : price(row.unitValue)}<small>{row.priceUnit ? `por ${row.priceUnit}` : ''}</small></td>
           <td className="numeric"><strong>{row.kind === 'entry' ? '—' : row.expense === null ? 'No sumada' : amount(row.expense)}</strong>{row.kind === 'exit' && row.issue && <small className="monthly-activity-warning">{row.issue}</small>}</td>
         </tr>)}</tbody>
@@ -65,9 +66,9 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
   const snapshot = summary.activity ? recovered?.snapshot ?? stored : reconstructed;
   const totals = useMemo(() => snapshot ? summarizeMonthlyActivity(snapshot.rows) : null, [snapshot]);
   const groups = useMemo(() => snapshot ? groupMonthlyExpenses(snapshot.rows, grouping) : [], [snapshot, grouping]);
-  const filteredGroups = groups.filter((group) => `${group.label} ${group.rows.map((row) => `${row.moduleName} ${row.code} ${row.product} ${row.recipientName} ${row.destinationLot}`).join(' ')}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const filteredGroups = groups.filter((group) => `${group.label} ${group.rows.map((row) => `${row.moduleName} ${row.code} ${row.product} ${row.recipientName} ${formatDestinationLot(row.destinationLot)} ${row.machinery ?? ''}`).join(' ')}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   const filteredMovements = snapshot?.rows.filter((row) => (kind === 'all' || row.kind === kind)
-    && `${row.moduleName} ${row.code} ${row.product} ${row.recipientName} ${row.destinationLot}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) ?? [];
+    && `${row.moduleName} ${row.code} ${row.product} ${row.recipientName} ${formatDestinationLot(row.destinationLot)} ${row.machinery ?? ''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())) ?? [];
 
   if (error) return <div className="alert-line">{error}</div>;
   if (!snapshot || !totals) return <div className="alert-line notice">{!summary.activity && !summary.createdAt
@@ -83,9 +84,7 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
   };
 
   return <section className="monthly-activity">
-    {Boolean(recovered?.personalCount) && <p className="monthly-activity-note">Destino Personal aplicado a Consumibles, Dotación, EPP y entregas específicas confirmadas, conservando quién recibió cada entrega. El corte original no se modifica.</p>}
-    {Boolean(recovered?.discardedStorageCount) && <p className="monthly-activity-note">Los pisos de almacenamiento de ASEO no se usan como destino de salida. Si no consta un destino real, la entrega queda sin destino identificado. El corte original no se modifica.</p>}
-    {Boolean(recovered?.recoveredCount) && <p className="monthly-activity-note">{recovered?.recoveredCount} destinos recuperados del historial actual para esta consulta. El corte guardado, sus cantidades y sus valores no se modificaron.</p>}
+    {Boolean(recovered && (recovered.personalCount || recovered.discardedStorageCount || recovered.recoveredCount || recovered.machineryCount)) && <p className="monthly-activity-note">Destinos y maquinaria completados para esta consulta. El corte guardado, sus cantidades y sus valores no se modificaron.</p>}
     <p className="monthly-activity-note"><strong>{summary.activity ? 'Detalle guardado en el corte.' : 'Reconstruido desde el historial actual.'}</strong> Hasta {new Date(snapshot.cutoffAt).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}. Gasto estimado con los precios unitarios guardados en ese corte; no es costo histórico por salida. Taller excluido.</p>
     {view === 'movements' ? <div className="monthly-activity-kpis">
       <article className="valuation-summary-card valued"><ArrowDownToLine size={24} /><div><span>Entradas del mes</span><strong>{totals.entryCount}</strong><small>{unitTotals('entry')}</small></div></article>
@@ -95,16 +94,16 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
         {([['lot', 'Por lote de destino'], ['module', 'Por módulo'], ['product', 'Por producto'], ['person', 'Dotación y EPP por persona']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={grouping === id} className={grouping === id ? 'active' : ''} onClick={() => { setGrouping(id); setSearch(''); setVisibleGroups(30); }}>{label}</button>)}
       </div>
       <article className="valuation-summary-card total"><CircleDollarSign size={24} /><div><span>{grouping === 'person' ? 'Gasto estimado en Dotación y EPP' : 'Gasto mensual estimado'}</span><strong>{amount(scopeTotals.estimatedExpense)}</strong><small>{scopeTotals.exitCount - scopeTotals.unpricedExitCount} de {scopeTotals.exitCount} salidas valoradas · {scopeTotals.unpricedExitCount} no sumadas</small></div></article>
-      <p className="monthly-activity-note">{grouping === 'person' ? 'Agrupado por quien recibió la entrega. Abre una persona para consultar productos, cantidades y fechas.' : 'De mayor a menor gasto. Abre cada grupo para consultar los módulos, productos, cantidades y destinatarios.'}</p>
+      <p className="monthly-activity-note">{grouping === 'person' ? 'Agrupado por quien recibió la entrega.' : grouping === 'lot' ? 'Lotes en orden numérico y luego por nombre. Las salidas a varios lotes se mantienen juntas, sin duplicar el gasto.' : 'De mayor a menor gasto.'}</p>
     </>}
     {(snapshot.invalidDateCount > 0 || snapshot.invalidQuantityCount > 0) && <div className="alert-line">{snapshot.invalidDateCount} registros del historial sin fecha asignable · {snapshot.invalidQuantityCount} registros del mes con cantidad inválida, excluidos.</div>}
     <div className="monthly-activity-filters">
-      <label>Buscar<input aria-label="Buscar en actividad mensual" value={search} onChange={(event) => { setSearch(event.target.value); setVisibleGroups(30); }} placeholder="Producto, módulo, lote o persona" /></label>
+      <label>Buscar<input aria-label="Buscar en actividad mensual" value={search} onChange={(event) => { setSearch(event.target.value); setVisibleGroups(30); }} placeholder="Producto, lote, persona o maquinaria" /></label>
       {view === 'movements' && <label>Movimiento<select aria-label="Tipo de movimiento mensual" value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">Entradas y salidas</option><option value="entry">Entradas</option><option value="exit">Salidas</option></select></label>}
     </div>
     {view === 'movements' ? (filteredMovements.length ? <MovementDetails key={`${summary.period}:${kind}:${search}`} rows={filteredMovements} /> : <p className="valuation-chart-empty">No hay movimientos que coincidan.</p>) : <div className="monthly-expense-groups">
       {filteredGroups.slice(0, visibleGroups).map((group) => <details key={`${grouping}:${group.id}`} className="monthly-expense-group">
-        <summary><span><strong>{group.label}</strong><small>{group.rows.length} salidas · {group.unpriced} no sumadas{grouping !== 'person' ? ` · ${scopeTotals.estimatedExpense > 0 ? number(group.expense / scopeTotals.estimatedExpense * 100) : 0}% del gasto` : ''}</small></span><strong>{amount(group.expense)}</strong></summary>
+        <summary><span><strong>{group.label}</strong>{grouping !== 'lot' && <small>{group.rows.length} salidas · {group.unpriced} no sumadas</small>}</span><strong>{amount(group.expense)}</strong></summary>
         <MovementDetails rows={group.rows} />
       </details>)}
       {!filteredGroups.length && <p className="valuation-chart-empty">No hay salidas que coincidan en este mes.</p>}

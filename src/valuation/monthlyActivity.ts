@@ -12,6 +12,7 @@ export type MonthlyActivitySource = InventoryAnalysisSourceMovement & {
   zone?: string;
   labor?: string;
   front?: string;
+  machinery?: string;
   recipientId?: string;
   recipientName?: string;
 };
@@ -30,6 +31,7 @@ export type MonthlyActivityRow = {
   destinationLot: string;
   recipientId: string;
   recipientName: string;
+  machinery?: string; // Optional for cuts saved before machinery was included.
   unitValue: number | null;
   priceUnit: string;
   expense: number | null;
@@ -50,6 +52,23 @@ export const PERSONAL_DESTINATION = 'Personal';
 
 function usesPersonalDestination(moduleName: string) {
   return ['consumibles', 'dotacion', 'epp'].includes(normalizeMovementText(moduleName));
+}
+
+function isPersonalAseoProduct(moduleName: string, code: string) {
+  // User-confirmed use: floor 5 toilet paper goes to Personal, not to its storage floor/COP.
+  return normalizeMovementText(moduleName) === 'aseo' && code.toUpperCase().replace(/[^A-Z0-9]/g, '') === 'H05007';
+}
+
+function isConfirmedCopFuelWork(source: MonthlyActivitySource) {
+  if (normalizeMovementText(source.module) !== 'combustible' || classifyInventoryMovementType(source.type) !== 'exit') return false;
+  // User-confirmed destination for tractor washing and maintenance fuel deliveries.
+  return [source.labor, source.front, source.observations, source.zone].some((value) => {
+    const text = normalizeMovementText(value ?? '');
+    return !/\b(?:sin|no)\b/.test(text)
+      && (/\bmantenimiento\b/.test(text)
+        || /\b(?:lavados?(?:\s+(?:de|del))?|lavar)\s+(?:el\s+)?tractor(?:es)?\b/.test(text)
+        || /\brecogida\s+(?:(?:de|del)\s+)?personal\b/.test(text));
+  });
 }
 
 function isConfirmedPersonalAseoExit(id: string, moduleName: string, code: string, quantity: number, occurredAt: string) {
@@ -75,6 +94,16 @@ function canonicalDestination(value: string) {
   const key = normalizeMovementText(clean);
   if (!key || /^(?:n\/?a|sin (?:lote(?: de destino)?|asignar|destino)|no registrado)$/.test(key)) return '';
   if (/^(?:c\.?o\.?p\.?|centro de operaciones|cop\s*\(centro de operaciones\))$/.test(key)) return 'COP (Centro de Operaciones)';
+  if (/^(?:jardin clonal|(?:lote )?ex(?:p)?erimental)$/.test(key)) return key === 'jardin clonal' ? 'Jardín clonal' : 'Experimental';
+  if (/^(?:recorridos?|recorrido salida\s*\/\s*plantacion)$/.test(key)) return FUEL_ROUTE_DESTINATION;
+  // Keep the lot identifiers, not the agricultural task or a trailing description.
+  // A joint delivery stays in ONE joint group: never duplicate/split its cost.
+  const codes = /^(\d+[a-z]?(?:\s*(?:,|\/|&|\by\b)\s*(?:lotes?\s+)?\d+[a-z]?)*)(?=$|[\s;:.(\-])/i.exec(clean)?.[1];
+  if (codes) {
+    const parts = [...new Set((codes.match(/\d+[a-z]?/gi) ?? []).map((code) => code.replace(/^0+(?=\d)/, '').toUpperCase()))]
+      .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} y ${parts.at(-1)}` : parts[0];
+  }
   return ({ taller: 'Taller', cocina: 'Cocina', comedor: 'Comedor' } as Record<string, string>)[key] || clean;
 }
 
@@ -92,7 +121,7 @@ function namedDestination(texts: readonly (string | undefined)[]) {
     // A named place is not an amount in COP or a negated/origin reference.
     if (/\b(?:sin|no|desde|origen)\b/.test(normalized)
       || /(?:\d[\d.,\s]*\s*cop\b|\bcop\s*\$?\s*\d)/.test(normalized)) continue;
-    for (const match of normalized.matchAll(/\b(?:centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor)\b/g)) {
+    for (const match of normalized.matchAll(/\b(?:centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor|jardin clonal|ex(?:p)?erimental|vivero)\b/g)) {
       const name = canonicalDestination(match[0]);
       // Preserve qualified locations; do not merge Taller 1 and Taller 2.
       const suffix = normalized.slice((match.index ?? 0) + match[0].length).trim();
@@ -109,7 +138,9 @@ function namedDestination(texts: readonly (string | undefined)[]) {
 export function destinationLotOf(source: MonthlyActivitySource) {
   if (classifyInventoryMovementType(source.type) === 'exit'
     && (usesPersonalDestination(source.module)
+      || isPersonalAseoProduct(source.module, source.code ?? '')
       || isConfirmedPersonalAseoExit(source.id, source.module, source.code ?? '', source.quantity, source.occurredAt))) return PERSONAL_DESTINATION;
+  if (isConfirmedCopFuelWork(source)) return 'COP (Centro de Operaciones)';
   const readDestination = (value: string) => isStorageFloorDestination(source.module, value) ? '' : canonicalDestination(value);
   const explicit = readDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
@@ -133,27 +164,38 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
   let recoveredCount = 0;
   let discardedStorageCount = 0;
   let personalCount = 0;
-  const rows = snapshot.rows.map((row) => {
+  let machineryCount = 0;
+  const rows = snapshot.rows.map((originalRow) => {
+    let row = originalRow;
+    const source = byId.get(row.id);
+    const sameMovement = source && normalizeMovementText(source.module) === normalizeMovementText(row.moduleName)
+      && classifyInventoryMovementType(source.type) === row.kind && source.quantity === row.quantity
+      && movementTime(source.occurredAt) === movementTime(row.occurredAt);
+    if (!row.machinery?.trim() && sameMovement && source.machinery?.trim()) {
+      row = { ...row, machinery: source.machinery.trim() };
+      machineryCount += 1;
+    }
     if (row.kind !== 'exit') return row;
     if (usesPersonalDestination(row.moduleName)
+      || isPersonalAseoProduct(row.moduleName, row.code)
       || isConfirmedPersonalAseoExit(row.id, row.moduleName, row.code, row.quantity, row.occurredAt)) {
       if (row.destinationLot === PERSONAL_DESTINATION) return row;
       personalCount += 1;
       return { ...row, destinationLot: PERSONAL_DESTINATION };
     }
     const storageFloor = isStorageFloorDestination(row.moduleName, row.destinationLot);
-    if (!storageFloor && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) return row;
-    const source = byId.get(row.id);
-    const sameMovement = source && normalizeMovementText(source.module) === normalizeMovementText(row.moduleName)
-      && classifyInventoryMovementType(source.type) === row.kind && source.quantity === row.quantity
-      && movementTime(source.occurredAt) === movementTime(row.occurredAt);
+    // Explicit user correction of the 2026-08-19 Roto speed exit. Read its current
+    // destination for this view, leaving the saved cut unchanged.
+    const confirmedSourceCorrection = sameMovement && (row.id === '1TP0IxcXpmaG0OmKAUT1' || isConfirmedCopFuelWork(source));
+    if (!storageFloor && !confirmedSourceCorrection && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) return row;
     const destinationLot = sameMovement ? destinationLotOf(source) : UNKNOWN_DESTINATION_LOT;
     if (destinationLot === UNKNOWN_DESTINATION_LOT && !storageFloor) return row;
+    if (destinationLot === row.destinationLot) return row;
     if (storageFloor) discardedStorageCount += 1;
     if (destinationLot !== UNKNOWN_DESTINATION_LOT) recoveredCount += 1;
     return { ...row, destinationLot };
   });
-  return { snapshot: recoveredCount || discardedStorageCount || personalCount ? { ...snapshot, rows } : snapshot, recoveredCount, discardedStorageCount, personalCount };
+  return { snapshot: recoveredCount || discardedStorageCount || personalCount || machineryCount ? { ...snapshot, rows } : snapshot, recoveredCount, discardedStorageCount, personalCount, machineryCount };
 }
 
 function movementTime(value: string) {
@@ -240,6 +282,7 @@ export function buildMonthlyActivity(
       quantity: source.quantity, unit, destinationLot: destinationLotOf(source),
       recipientId: source.recipientId?.trim() ?? '',
       recipientName: source.recipientName?.trim() || source.recipientId?.trim() || 'Sin personal identificado',
+      machinery: source.machinery?.trim() || '',
       unitValue: price, priceUnit: valuation?.unit ?? '',
       expense: kind === 'exit' && !issue ? pricedQuantity! * price! : null,
       issue,
@@ -263,10 +306,24 @@ export type ExpenseGrouping = 'lot' | 'module' | 'product' | 'person';
 export function isPersonnelExpense(row: MonthlyActivityRow) {
   return ['dotacion', 'epp'].includes(normalizeMovementText(row.moduleName));
 }
+
+export function formatDestinationLot(value: string) {
+  const canonical = canonicalDestination(value);
+  if (!canonical || canonical === UNKNOWN_DESTINATION_LOT) return UNKNOWN_DESTINATION_LOT;
+  const short = canonical === FUEL_ROUTE_DESTINATION ? 'Recorrido'
+    : canonical === 'COP (Centro de Operaciones)' ? 'COP' : canonical;
+  return `Lote ${short}`;
+}
+
+function compareLotLabels(a: string, b: string) {
+  const rank = (label: string) => label === UNKNOWN_DESTINATION_LOT ? 2 : /^Lote \d/.test(label) ? 0 : 1;
+  return rank(a) - rank(b) || a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+}
+
 export function groupMonthlyExpenses(rows: readonly MonthlyActivityRow[], by: ExpenseGrouping) {
   const groups = new Map<string, { id: string; label: string; expense: number; unpriced: number; rows: MonthlyActivityRow[] }>();
   rows.filter((row) => row.kind === 'exit' && (by !== 'person' || isPersonnelExpense(row))).forEach((row) => {
-    const label = by === 'person' ? row.recipientName : by === 'lot' ? row.destinationLot : by === 'module' ? row.moduleName : `${row.code || 'Sin código'} · ${row.product}`;
+    const label = by === 'person' ? row.recipientName : by === 'lot' ? formatDestinationLot(row.destinationLot) : by === 'module' ? row.moduleName : `${row.code || 'Sin código'} · ${row.product}`;
     const id = by === 'person' ? (row.recipientId.startsWith('uid:') ? row.recipientId : normalizeMovementText(row.recipientId || label).replace(/\s+/g, ' '))
       : by === 'product' ? row.productId || JSON.stringify([row.moduleName, row.code, row.product]) : normalizeMovementText(label);
     const group = groups.get(id) ?? { id, label, expense: 0, unpriced: 0, rows: [] };
@@ -275,5 +332,5 @@ export function groupMonthlyExpenses(rows: readonly MonthlyActivityRow[], by: Ex
     group.rows.push(row);
     groups.set(id, group);
   });
-  return [...groups.values()].sort((a, b) => b.expense - a.expense || a.label.localeCompare(b.label));
+  return [...groups.values()].sort((a, b) => by === 'lot' ? compareLotLabels(a.label, b.label) : b.expense - a.expense || a.label.localeCompare(b.label));
 }

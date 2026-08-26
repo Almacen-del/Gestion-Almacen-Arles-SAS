@@ -153,8 +153,8 @@ export async function loadMonthlyValuationSummaryPage(
 ): Promise<MonthlyValuationSummaryPage> {
   const source = collection(db, MONTHLY_CLOSES_COLLECTION);
   const pageQuery = cursor
-    ? query(source, orderBy(documentId(), 'desc'), startAfter(cursor), firestoreLimit(pageSize))
-    : query(source, orderBy(documentId(), 'desc'), firestoreLimit(pageSize));
+    ? query(source, orderBy(documentId()), startAfter(cursor), firestoreLimit(pageSize))
+    : query(source, orderBy(documentId()), firestoreLimit(pageSize));
   const snapshot = await getDocs(pageQuery);
   const summaries = snapshot.docs
     .map((snapshotDoc) => readMonthlySummary(snapshotDoc.id, snapshotDoc.data()))

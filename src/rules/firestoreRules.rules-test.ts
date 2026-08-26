@@ -5,7 +5,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collectionGroup, doc, getDoc, getDocs, query, setDoc, Timestamp, type Firestore } from 'firebase/firestore';
+import { collection, collectionGroup, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, Timestamp, type Firestore } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   emptyValuationRevision,
@@ -73,6 +73,37 @@ describe('isActiveUser en firestore.rules', () => {
       await setDoc(doc(context.firestore(), 'existencias', 'producto-prueba'), { saldo: 1 });
     });
     await assertSucceeds(inventoryRead('propietario', OWNER_EMAIL));
+  });
+
+  it('permite listar cierres mensuales y sus ítems a un operador activo', async () => {
+    await seedUser('operador-cierres', { estado: 'activo', rol: 'operador' });
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'cierres_valoracion_inventario', '2026-08'), {
+        estado: 'completo',
+      });
+      await setDoc(doc(
+        context.firestore(),
+        'cierres_valoracion_inventario',
+        '2026-08',
+        'items',
+        'producto-prueba',
+      ), { producto: 'Producto de prueba' });
+    });
+    const context = testEnvironment.authenticatedContext('operador-cierres', {
+      email: 'operador-cierres@arlessas.com',
+    });
+
+    await assertSucceeds(getDocs(query(
+      collection(context.firestore(), 'cierres_valoracion_inventario'),
+      orderBy(documentId()),
+      limit(12),
+    )));
+    await assertSucceeds(getDocs(collection(
+      context.firestore(),
+      'cierres_valoracion_inventario',
+      '2026-08',
+      'items',
+    )));
   });
 
 

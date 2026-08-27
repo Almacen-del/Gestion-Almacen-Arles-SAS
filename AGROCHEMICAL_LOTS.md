@@ -27,6 +27,13 @@ Campos del lote:
 
 El formulario impide asignar a lotes una cantidad superior al saldo del producto que todavía no tiene lote registrado. Un mismo producto puede tener varios documentos de lote con fechas diferentes.
 
+## Avisos por correo
+
+La integración opcional con Google Apps Script consulta los lotes una vez al día y agrupa
+los avisos de 60, 30, 15 y 7 días. Los vencidos se notifican una sola vez por lote/destinatario.
+No modifica existencias y necesita autorización y activación independientes de la web.
+Ver [configuración, pruebas y estado de instalación](integrations/expiry-alerts/README.md).
+
 ## Entradas móviles pendientes
 
 La web consulta los movimientos `entrada_stock` de Agroquímicos y compara su cantidad con lo ya asignado a lotes. Una entrada nueva aparece automáticamente como pendiente, sin modificar el movimiento original. Desde esa fila se registra el lote y su fecha de vencimiento; una entrada puede dividirse entre varios lotes.

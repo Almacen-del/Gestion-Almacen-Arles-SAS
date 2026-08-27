@@ -7,9 +7,9 @@ y la recepción del primer correo de prueba. El 27/08/2026 a las 07:13:41 (Colom
 se confirmó en Apps Script un nuevo envío de prueba solo a Almacén, con un ajuste visual
 para modo oscuro. El usuario indicó que no funcionó y solicitó restaurar el diseño original;
 ese ajuste se revirtió, sin cambiar las alertas ni enviar otra prueba.
-La última firma aprobada (`assets/firma-avisos-arles.png`) se incorporó al final del correo.
-El 27/08/2026 a las 07:51:33 se confirmó en Apps Script el envío de una prueba con firma
-reducida a 500 px solo a `almacen@arlessas.com`; el usuario confirmó recepción y diseño.
+La firma enviada por el usuario (`C:\\Users\\Almacen\\Desktop\\Firma digital.png`) reemplazó
+la anterior y se incorporó al final del correo. El 27/08/2026 a las 08:41:30 se confirmó
+en Apps Script el envío de una prueba solo a `almacen@arlessas.com`.
 Con autorización expresa del usuario, el programador diario se activó el 27/08/2026
 a las 07:56:16 (Colombia). Se verificó `activo: true`, sin reservas pendientes y un único
 activador `revisarVencimientosDiarios`, diario entre 7 y 8 a. m. (GMT-05:00).
@@ -36,7 +36,7 @@ la imagen incrustada y la aprobada. Subir la web a Vercel no activa este script.
 - Presentación original: cabecera verde simple, sin ajustes para forzar el modo oscuro.
   Los lectores de correo pueden transformar sus colores. No modifica correos ya recibidos.
 - Firma final: PNG aprobado, incrustado mediante `inlineImages` y `cid:arlesSignature`,
-  mostrado a 500 × 167 px y adaptable al ancho disponible. No descarga recursos externos,
+  mostrado a 500 × 129 px y adaptable al ancho disponible. No descarga recursos externos,
   no publica la imagen y no añade permisos OAuth. También se incluye su texto en la versión
   de texto plano. No añade ningún destinatario ni cambia la política de aviso único.
 

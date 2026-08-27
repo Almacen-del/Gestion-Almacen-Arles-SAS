@@ -112,4 +112,21 @@ describe('lotes de agroquímicos', () => {
       assignmentStatus: 'assigned',
     });
   });
+
+  it('permite relacionar varias entradas distintas con un mismo lote físico', () => {
+    const firstEntry = {
+      id: 'entry-1', productDocumentId: 'product-1', moduleName: 'Agroquímicos', code: 'FER-1',
+      productName: 'Fertilizante', quantity: 10, unit: 'KG', dateLabel: '20/08/2026',
+      dateKey: '2026-08-20', createdAtMs: 1, validationIssue: '',
+    };
+    const secondEntry = { ...firstEntry, id: 'entry-2', quantity: 6, createdAtMs: 2 };
+    const sharedLot = lot('Lote 01', '2027-01-10', 16);
+    sharedLot.entryAssignments = [
+      { entryId: firstEntry.id, quantity: firstEntry.quantity },
+      { entryId: secondEntry.id, quantity: secondEntry.quantity },
+    ];
+
+    expect(buildAgrochemicalEntryQueue([firstEntry, secondEntry], [sharedLot])
+      .every((entry) => entry.assignmentStatus === 'assigned')).toBe(true);
+  });
 });

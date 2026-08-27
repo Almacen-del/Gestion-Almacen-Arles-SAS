@@ -209,7 +209,7 @@ function expiryMessage_(rows, today, preview) {
     + '<p style="font-size:12px;color:#52645a">' + expiryEscape_(note) + '</p>'
     + '<p><a href="' + EXPIRY_CONFIG.webUrl + '">Consultar inventario en la web</a></p>'
     + '<div style="margin-top:24px;padding-top:16px;border-top:1px solid #dce9e1">'
-    + '<img src="cid:arlesSignature" width="500" height="167" '
+    + '<img src="cid:arlesSignature" width="500" height="129" '
     + 'alt="GENERADOR AUTOMATICO DE AVISOS Y ALERTAS · GESTION DE ALMACEN" '
     + 'style="display:block;width:500px;max-width:100%;height:auto;border:0"></div></div>';
   return { subject, body, htmlBody, name: 'Almacén Arles · Vencimientos', replyTo: EXPIRY_CONFIG.sender,

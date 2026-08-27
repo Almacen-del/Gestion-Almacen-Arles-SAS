@@ -246,7 +246,7 @@ test('firma final incrustada idéntica al PNG aprobado, sin descargar imágenes 
   assert.equal(signature.getName(), 'firma-avisos-arles.png');
   assert.ok(message.htmlBody.indexOf('cid:arlesSignature') > message.htmlBody.indexOf('Consultar inventario'));
   assert.ok(message.htmlBody.includes('max-width:100%;height:auto'));
-  assert.ok(message.htmlBody.includes('width="500" height="167"'));
+  assert.ok(message.htmlBody.includes('width="500" height="129"'));
   assert.ok(message.htmlBody.includes('width:500px;max-width:100%'));
   assert.ok(message.body.endsWith('GENERADOR AUTOMATICO DE AVISOS Y ALERTAS\nGESTION DE ALMACEN'));
   assert.equal(h.state.fetches.length, 1);

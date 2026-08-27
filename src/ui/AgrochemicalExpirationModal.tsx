@@ -67,6 +67,7 @@ export default function AgrochemicalExpirationModal({
   const today = localDateKey();
   const [productDocumentId, setProductDocumentId] = useState('');
   const [selectedEntryId, setSelectedEntryId] = useState('');
+  const [selectedExistingLotId, setSelectedExistingLotId] = useState('');
   const [lotNumber, setLotNumber] = useState('');
   const [expirationPrecision, setExpirationPrecision] = useState<'day' | 'month'>('day');
   const [expirationDate, setExpirationDate] = useState('');
@@ -93,6 +94,9 @@ export default function AgrochemicalExpirationModal({
     return totals;
   }, [lots]);
   const selectedProduct = productById.get(productDocumentId);
+  const existingLotsForSelectedProduct = useMemo(() => sortedLots.filter((lot) => (
+    lot.productDocumentId === productDocumentId
+  )), [productDocumentId, sortedLots]);
   const unassignedQuantity = selectedProduct
     ? Math.max(0, selectedProduct.stock - (lotQuantityByProduct.get(selectedProduct.id) ?? 0))
     : 0;
@@ -139,6 +143,7 @@ export default function AgrochemicalExpirationModal({
       setExpirationDate('');
       setQuantity('');
       setSelectedEntryId('');
+      setSelectedExistingLotId('');
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'No se pudo registrar el lote.');
     } finally {
@@ -150,9 +155,21 @@ export default function AgrochemicalExpirationModal({
     const entry = entryQueue.find((candidate) => candidate.id === entryId);
     if (!entry || entry.assignmentStatus === 'invalid' || entry.assignmentStatus === 'assigned') return;
     setSelectedEntryId(entry.id);
+    setSelectedExistingLotId('');
     setProductDocumentId(entry.productDocumentId);
     setQuantity(String(entry.pendingQuantity));
     setReceivedAt(entry.dateKey || today);
+    setFormError('');
+    setSavedMessage('');
+  }
+
+  function selectExistingLot(lotId: string) {
+    setSelectedExistingLotId(lotId);
+    const existingLot = existingLotsForSelectedProduct.find((lot) => lot.id === lotId);
+    if (!existingLot) return;
+    setLotNumber(existingLot.lotNumber);
+    setExpirationPrecision(existingLot.expirationDate.length === 7 ? 'month' : 'day');
+    setExpirationDate(existingLot.expirationDate);
     setFormError('');
     setSavedMessage('');
   }
@@ -221,7 +238,14 @@ export default function AgrochemicalExpirationModal({
                 <select
                   value={productDocumentId}
                   disabled={Boolean(selectedEntry)}
-                  onChange={(event) => { setSelectedEntryId(''); setProductDocumentId(event.target.value); setQuantity(''); }}
+                  onChange={(event) => {
+                    setSelectedEntryId('');
+                    setSelectedExistingLotId('');
+                    setProductDocumentId(event.target.value);
+                    setLotNumber('');
+                    setExpirationDate('');
+                    setQuantity('');
+                  }}
                 >
                   <option value="">Seleccionar producto</option>
                   {products.map((product) => (
@@ -230,13 +254,27 @@ export default function AgrochemicalExpirationModal({
                 </select>
                 {selectedEntry && <small>Entrada: {selectedEntry.id}</small>}
               </label>
+              {existingLotsForSelectedProduct.length > 0 && (
+                <label className="agro-existing-lot">Reutilizar lote registrado
+                  <select value={selectedExistingLotId} onChange={(event) => selectExistingLot(event.target.value)}>
+                    <option value="">Escribir un lote nuevo</option>
+                    {existingLotsForSelectedProduct.map((lot) => (
+                      <option key={lot.id} value={lot.id}>
+                        {lot.lotNumber} · FV {lot.expirationDate} · {formatQuantity(lot.quantity)} {lot.unit}
+                      </option>
+                    ))}
+                  </select>
+                  <small>Solo muestra lotes del producto seleccionado; elige uno para sumar esta entrada al mismo lote.</small>
+                </label>
+              )}
               <label>Número de lote
-                <input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} placeholder="Ej. L-2026-08" />
+                <input value={lotNumber} onChange={(event) => { setSelectedExistingLotId(''); setLotNumber(event.target.value); }} placeholder="Ej. L-2026-08" />
               </label>
               <label>Fecha de vencimiento
                 <select
                   value={expirationPrecision}
                   onChange={(event) => {
+                    setSelectedExistingLotId('');
                     setExpirationPrecision(event.target.value as 'day' | 'month');
                     setExpirationDate('');
                   }}
@@ -247,7 +285,7 @@ export default function AgrochemicalExpirationModal({
                 <input
                   type={expirationPrecision === 'month' ? 'month' : 'date'}
                   value={expirationDate}
-                  onChange={(event) => setExpirationDate(event.target.value)}
+                  onChange={(event) => { setSelectedExistingLotId(''); setExpirationDate(event.target.value); }}
                 />
               </label>
               <label>Cantidad del lote
@@ -259,7 +297,7 @@ export default function AgrochemicalExpirationModal({
               </label>
               <button type="submit" disabled={saving || loading || Boolean(sourceError) || registrationLimit <= 0}>{saving ? 'Guardando...' : 'Registrar lote'}</button>
             </form>
-            {selectedEntry && <button className="agro-clear-entry" type="button" onClick={() => { setSelectedEntryId(''); setProductDocumentId(''); setQuantity(''); }}>Cancelar selección de entrada</button>}
+            {selectedEntry && <button className="agro-clear-entry" type="button" onClick={() => { setSelectedEntryId(''); setSelectedExistingLotId(''); setProductDocumentId(''); setLotNumber(''); setExpirationDate(''); setQuantity(''); }}>Cancelar selección de entrada</button>}
             {formError && <p className="agro-expiration-message error">{formError}</p>}
             {savedMessage && <p className="agro-expiration-message success">{savedMessage}</p>}
           </section>

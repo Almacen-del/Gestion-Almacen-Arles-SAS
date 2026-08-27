@@ -2039,13 +2039,16 @@ function AppShell({ user }: { user: User }) {
       const previousInitialQuantity = currentLot.exists()
         ? numberValue(currentLot.data(), 'cantidad_inicial', 'cantidad_entrada', 'cantidad')
         : 0;
+      const previousReceivedAt = currentLot.exists()
+        ? dateTextValue(currentLot.data(), 'fecha_ingreso', 'fecha_entrada', 'createdAt', 'creado_en')
+        : '';
       transaction.set(lotRef, {
         producto_id: product.id,
         codigo_producto: product.codigo,
         producto: product.descripcion,
         numero_lote: registration.lotNumber,
         fecha_vencimiento: registration.expirationDate,
-        fecha_ingreso: registration.receivedAt,
+        fecha_ingreso: previousReceivedAt || registration.receivedAt,
         cantidad_inicial: previousInitialQuantity + registration.quantity,
         cantidad_disponible: previousLotQuantity + registration.quantity,
         asignaciones_entrada: entryAssignments.map((entry) => ({

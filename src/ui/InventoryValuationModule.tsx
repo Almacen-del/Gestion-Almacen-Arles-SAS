@@ -19,6 +19,7 @@ import {
   DuplicateMonthlyCloseError,
   EarlyMonthlyCloseConfirmationError,
   formatValuationPeriod,
+  HistoricalReconstructionConfirmationError,
   loadMonthlyValuationSummaryPage,
   loadMonthlyValuationItems,
   mergeMonthlyValuationSummaryPages,
@@ -50,7 +51,8 @@ import { isInventoryValuationModuleIncluded } from '../valuation/inventoryValuat
 import { shouldShowCurrentValueModuleCard } from './currentValueModuleCards';
 import PendingEntryValuations from './PendingEntryValuations';
 import MonthlyActivityPanel from './MonthlyActivityPanel';
-import type { MonthlyActivitySource } from '../valuation/monthlyActivity';
+import { summarizeMonthlyActivity, type MonthlyActivitySource } from '../valuation/monthlyActivity';
+import { priorPeriods, reconstructHistoricalMonthlyClose } from '../valuation/historicalReconstruction';
 
 type ValuationTab = 'current' | 'entries' | 'history';
 type MonthlySaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -626,7 +628,16 @@ function CurrentValuationView({
   );
 }
 
-function HistoricalValuationView({ sources, historyReady }: { sources: readonly MonthlyActivitySource[]; historyReady: boolean }) {
+function HistoricalValuationView({
+  sources, historyReady, currentRows, moduleOptions, online, user,
+}: {
+  sources: readonly MonthlyActivitySource[];
+  historyReady: boolean;
+  currentRows: readonly CurrentValuationRow[];
+  moduleOptions: readonly string[];
+  online: boolean;
+  user: User;
+}) {
   const [view, setView] = useState<'inventory' | 'movements' | 'expense'>('inventory');
   const [itemsPeriod, setItemsPeriod] = useState('');
   const [summaries, setSummaries] = useState<MonthlyValuationSummary[]>([]);
@@ -637,6 +648,13 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
   const [hasMoreSummaries, setHasMoreSummaries] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [reconstructionOpen, setReconstructionOpen] = useState(false);
+  const [reconstructionReferenceAt, setReconstructionReferenceAt] = useState<Date | null>(null);
+  const [reconstructionPeriod, setReconstructionPeriod] = useState('');
+  const [reconstructionConfirmation, setReconstructionConfirmation] = useState('');
+  const [reconstructionState, setReconstructionState] = useState<MonthlySaveState>('idle');
+  const [reconstructionMessage, setReconstructionMessage] = useState('');
+  const [reconstructionProgress, setReconstructionProgress] = useState({ completed: 0, total: 1 });
   const summaryCursorRef = useRef<string | null>(null);
   const loadingSummaryPageRef = useRef(false);
 
@@ -717,6 +735,91 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
     () => [...items].filter((item) => item.totalValue > 0).sort((left, right) => right.totalValue - left.totalValue).slice(0, 10),
     [items],
   );
+  const reconstructionPeriods = useMemo(() => priorPeriods(currentValuationPeriod(reconstructionReferenceAt ?? new Date()), 2)
+    .filter((period) => !summaries.some((summary) => summary.period === period)), [reconstructionReferenceAt, summaries]);
+  const reconstructionPreviews = useMemo(() => {
+    if (!reconstructionReferenceAt || !historyReady) return [];
+    return reconstructionPeriods.map((period) => reconstructHistoricalMonthlyClose({
+      period,
+      currentRows,
+      moduleOptions,
+      movements: sources,
+      now: reconstructionReferenceAt,
+    }));
+  }, [currentRows, historyReady, moduleOptions, reconstructionPeriods, reconstructionReferenceAt, sources]);
+  const selectedReconstruction = reconstructionPreviews.find((preview) => preview.period === reconstructionPeriod) ?? reconstructionPreviews[0] ?? null;
+  const selectedReconstructionActivity = selectedReconstruction ? summarizeMonthlyActivity(selectedReconstruction.activity.rows) : null;
+
+  function openReconstruction() {
+    const referenceAt = new Date();
+    const candidates = priorPeriods(currentValuationPeriod(referenceAt), 2).filter((period) => !summaries.some((summary) => summary.period === period));
+    setReconstructionReferenceAt(referenceAt);
+    setReconstructionPeriod(candidates[0] ?? '');
+    setReconstructionConfirmation('');
+    setReconstructionMessage('');
+    setReconstructionState('idle');
+    setReconstructionOpen(true);
+  }
+
+  async function saveReconstruction() {
+    if (!selectedReconstruction || !reconstructionReferenceAt || reconstructionState === 'saving') return;
+    if (selectedReconstruction.blockingIssues.length) {
+      setReconstructionState('error');
+      setReconstructionMessage('La simulación contiene bloqueos y no puede guardarse.');
+      return;
+    }
+    const expected = `RECONSTRUIR ${selectedReconstruction.period}`;
+    if (reconstructionConfirmation.trim() !== expected) {
+      setReconstructionState('error');
+      setReconstructionMessage(`Escribe exactamente ${expected}.`);
+      return;
+    }
+    setReconstructionState('saving');
+    setReconstructionMessage('Guardando cierre reconstruido...');
+    setReconstructionProgress({ completed: 0, total: 1 });
+    try {
+      await saveMonthlyValuationClose({
+        period: selectedReconstruction.period,
+        rows: selectedReconstruction.rows,
+        moduleOptions: [...moduleOptions],
+        user,
+        earlyConfirmation: reconstructionConfirmation,
+        movements: sources,
+        historyComplete: historyReady,
+        reconstruction: {
+          cutoffAt: selectedReconstruction.cutoffAt,
+          valuedAt: reconstructionReferenceAt,
+          sourcePeriod: currentValuationPeriod(reconstructionReferenceAt),
+        },
+        onProgress: (completed, total) => {
+          setReconstructionProgress({ completed, total });
+          setReconstructionMessage(completed === total ? 'Cierre reconstruido y verificado.' : `Guardando paso ${completed} de ${total}...`);
+        },
+      });
+      setReconstructionState('saved');
+      setReconstructionMessage(`${formatValuationPeriod(selectedReconstruction.period)} quedó guardado como reconstrucción con precios actuales.`);
+      setReconstructionConfirmation('');
+      try {
+        const page = await loadMonthlyValuationSummaryPage();
+        setSummaries(page.summaries);
+        summaryCursorRef.current = page.cursor;
+        setHasMoreSummaries(page.hasMore);
+        setSelectedPeriod(page.summaries[0]?.period ?? selectedReconstruction.period);
+        setView('inventory');
+      } catch (readError) {
+        console.error('El cierre se guardó, pero no se pudo actualizar el listado:', readError);
+        setHistoryError('El cierre se guardó correctamente. Vuelve a abrir el histórico para actualizar la lista; no repitas el guardado.');
+      }
+    } catch (error) {
+      console.error('No se pudo guardar el cierre reconstruido:', error);
+      setReconstructionState('error');
+      if (error instanceof DuplicateMonthlyCloseError) setReconstructionMessage('Ese mes ya tiene un cierre completo; no se creó un duplicado.');
+      else if (error instanceof HistoricalReconstructionConfirmationError) setReconstructionMessage(error.message);
+      else if (error instanceof MonthlyCloseInProgressError) setReconstructionMessage('Ya existe un guardado en proceso para ese mes.');
+      else if (error instanceof MonthlyCloseVerificationError) setReconstructionMessage('La verificación no coincidió; el intento quedó marcado como error.');
+      else setReconstructionMessage('No se pudo guardar. Verifica conexión, permisos y consistencia del historial.');
+    }
+  }
 
   if (loadingSummaries) {
     return <div className="loading-state valuation-history-loading"><span className="loading-dot" /><span>Cargando histórico mensual...</span></div>;
@@ -729,14 +832,17 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
           <p className="eyebrow">Cierres disponibles</p>
           <h2>Consulta un corte mensual guardado</h2>
         </div>
-        <label className="status-sort valuation-month-selector">
-          <CalendarDays size={17} />
-          <span>Mes:</span>
-          <select value={selectedPeriod} onChange={(event) => setSelectedPeriod(event.target.value)} disabled={summaries.length === 0}>
-            {summaries.length === 0 && <option value="">Sin meses guardados</option>}
-            {summaries.map((entry) => <option key={entry.period} value={entry.period}>{formatValuationPeriod(entry.period)}</option>)}
-          </select>
-        </label>
+        <div className="valuation-history-actions">
+          <button type="button" className="tool-button" disabled={!online || !historyReady} onClick={openReconstruction}>Reconstruir meses anteriores</button>
+          <label className="status-sort valuation-month-selector">
+            <CalendarDays size={17} />
+            <span>Mes:</span>
+            <select value={selectedPeriod} onChange={(event) => setSelectedPeriod(event.target.value)} disabled={summaries.length === 0}>
+              {summaries.length === 0 && <option value="">Sin meses guardados</option>}
+              {summaries.map((entry, index) => <option key={entry.period} value={entry.period}>{formatValuationPeriod(entry.period)}{index === 0 ? ' · más reciente' : ''}{entry.reconstruction ? ' · reconstruido' : ''}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
 
       {hasMoreSummaries && (
@@ -752,6 +858,51 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
       )}
 
       {historyError && <div className="alert-line"><AlertTriangle size={18} />{historyError}</div>}
+
+      {selectedSummary?.reconstruction && (
+        <div className="alert-line notice"><AlertTriangle size={18} />Cierre reconstruido al {selectedSummary.reconstruction.cutoffAt ? formatBogotaDateTime(selectedSummary.reconstruction.cutoffAt) : selectedSummary.period}, usando los precios actuales de {selectedSummary.reconstruction.sourcePeriod}. No corresponde a una valoración registrada originalmente en ese mes.</div>
+      )}
+
+      {reconstructionOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => reconstructionState !== 'saving' && setReconstructionOpen(false)}>
+          <section className="entries-modal historical-reconstruction-modal" role="dialog" aria-modal="true" aria-label="Reconstruir cierres mensuales anteriores" onClick={(event) => event.stopPropagation()}>
+            <header className="evidence-header">
+              <div><p className="eyebrow">Herramienta administrativa excepcional</p><h2>Reconstruir junio y julio</h2></div>
+              <button className="icon-button" type="button" title="Cerrar" disabled={reconstructionState === 'saving'} onClick={() => setReconstructionOpen(false)}><X size={18} /></button>
+            </header>
+            <div className="historical-reconstruction-body">
+              <p>Las existencias se calculan revirtiendo movimientos posteriores. Los precios son los actuales y el cierre quedará marcado permanentemente como reconstruido.</p>
+              {!historyReady && <div className="alert-line"><AlertTriangle size={18} />El historial completo todavía no está confirmado.</div>}
+              {reconstructionPeriods.length === 0 ? <div className="empty-state"><Check size={28} /><strong>Junio y julio ya tienen cierre</strong><span>No hay meses anteriores pendientes dentro de esta reconstrucción.</span></div> : <>
+                <label className="valuation-modal-field">Mes a reconstruir
+                  <select value={selectedReconstruction?.period ?? ''} onChange={(event) => { setReconstructionPeriod(event.target.value); setReconstructionConfirmation(''); setReconstructionMessage(''); setReconstructionState('idle'); }}>
+                    {reconstructionPreviews.map((preview) => <option key={preview.period} value={preview.period}>{formatValuationPeriod(preview.period)}</option>)}
+                  </select>
+                </label>
+                {selectedReconstruction && selectedReconstructionActivity && <>
+                  <section className="historical-reconstruction-summary">
+                    <article><span>Existencias reconstruidas</span><strong>{formatNumber(selectedReconstruction.summary.productCount)}</strong><small>{formatCurrency(selectedReconstruction.summary.inventoryGrandTotal)}</small></article>
+                    <article><span>Entradas del mes</span><strong>{formatNumber(selectedReconstructionActivity.entryCount)}</strong><small>Movimientos originales</small></article>
+                    <article><span>Salidas del mes</span><strong>{formatNumber(selectedReconstructionActivity.exitCount)}</strong><small>{formatCurrency(selectedReconstructionActivity.estimatedExpense)} estimados</small></article>
+                    <article><span>Movimientos revertidos</span><strong>{formatNumber(selectedReconstruction.reversedMovementCount)}</strong><small>Posteriores al corte</small></article>
+                  </section>
+                  <ul className="historical-reconstruction-notes">{selectedReconstruction.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+                  {selectedReconstruction.blockingIssues.length > 0 && <div className="alert-line"><AlertTriangle size={18} /><div><strong>No se puede guardar todavía</strong><ul>{selectedReconstruction.blockingIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>{selectedReconstruction.blockingDetails.length > 0 && <details><summary>Ver registros que requieren revisión</summary><ul>{selectedReconstruction.blockingDetails.map((detail) => <li key={detail}>{detail}</li>)}</ul></details>}</div></div>}
+                  <label className="valuation-modal-field">Confirmación
+                    <input value={reconstructionConfirmation} onChange={(event) => setReconstructionConfirmation(event.target.value)} placeholder={`RECONSTRUIR ${selectedReconstruction.period}`} disabled={reconstructionState === 'saving'} />
+                    <small>Escribe exactamente RECONSTRUIR {selectedReconstruction.period}.</small>
+                  </label>
+                </>}
+                {reconstructionMessage && <div className={`valuation-save-progress ${reconstructionState}`} role="status"><div><span>{reconstructionMessage}</span><strong>{reconstructionState === 'saving' ? `${Math.round((reconstructionProgress.completed / Math.max(1, reconstructionProgress.total)) * 100)}%` : ''}</strong></div>{reconstructionState === 'saving' && <progress max="100" value={(reconstructionProgress.completed / Math.max(1, reconstructionProgress.total)) * 100} />}</div>}
+                <div className="valuation-modal-actions">
+                  <button type="button" disabled={reconstructionState === 'saving'} onClick={() => setReconstructionOpen(false)}>Cancelar</button>
+                  <button type="button" className="tool-button" disabled={!selectedReconstruction || selectedReconstruction.blockingIssues.length > 0 || reconstructionConfirmation.trim() !== `RECONSTRUIR ${selectedReconstruction.period}` || reconstructionState === 'saving'} onClick={() => { void saveReconstruction(); }}>{reconstructionState === 'saving' ? 'Guardando...' : 'Guardar reconstrucción'}</button>
+                </div>
+              </>}
+            </div>
+          </section>
+        </div>
+      )}
 
       {selectedSummary && <div className="valuation-tabs monthly-activity-view-tabs" role="tablist" aria-label="Contenido del histórico mensual">
         {([['inventory', 'Valor del inventario'], ['movements', 'Entradas y salidas'], ['expense', 'Gasto mensual']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? 'active' : ''} onClick={() => setView(id)}>{label}</button>)}
@@ -772,10 +923,10 @@ function HistoricalValuationView({ sources, historyReady }: { sources: readonly 
             <article className="valuation-summary-card total">
               <CircleDollarSign size={24} />
               <div>
-                <span>Valor total del mes</span>
+                <span>{selectedSummary.reconstruction ? 'Valor total reconstruido' : 'Valor total del mes'}</span>
                 <strong>{formatCurrency(selectedSummary.totalValue)}</strong>
                 <small>{formatValuationPeriod(selectedSummary.period)}</small>
-                {selectedSummary.createdAt && <small>Corte exacto: {formatBogotaDateTime(selectedSummary.createdAt)}</small>}
+                {selectedSummary.createdAt && <small>{selectedSummary.reconstruction ? 'Reconstruido el' : 'Corte exacto'}: {formatBogotaDateTime(selectedSummary.createdAt)}</small>}
               </div>
             </article>
             <article className={`valuation-summary-card variation ${variationAmount !== null && variationAmount < 0 ? 'negative' : ''}`}>
@@ -937,7 +1088,7 @@ export default function InventoryValuationModule({
           loadError={entryLoadError}
         />
       ) : (
-        <HistoricalValuationView sources={monthlyActivitySources} historyReady={exitHistoryComplete} />
+        <HistoricalValuationView sources={monthlyActivitySources} historyReady={exitHistoryComplete} currentRows={rows} moduleOptions={moduleOptions} online={online} user={user} />
       )}
     </section>
   );

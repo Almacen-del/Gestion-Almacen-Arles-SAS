@@ -391,6 +391,14 @@ describe('actividad y desglose del gasto mensual', () => {
       .toMatchObject({ expense: 74_550, issue: '' });
   });
 
+  it('trata una talla numérica de Dotación como unidad física', () => {
+    const shirt = { ...rows[0], valuationId: 'existencias__camisa', moduleName: 'Dotación', code: 'DOT-001', product: 'Camisa', unit: '12', unitValue: 80_000 };
+    const snapshot = buildMonthlyActivity('2026-08', [shirt], [
+      monthlyMovement('camisa', { module: 'Dotación', code: 'DOT-001', name: 'Camisa', unit: 'Unidad', quantity: 1 }),
+    ], monthlyCutoff);
+    expect(snapshot.rows[0]).toMatchObject({ priceUnit: '12', expense: 80_000, issue: '' });
+  });
+
   it('agrupa Dotación y EPP por destinatario con sus productos, sin incluir otros módulos', () => {
     const personalRows = [{ ...rows[0], moduleName: 'EPP' }, { ...rows[1], moduleName: 'Dotación', unitValue: 1000 }];
     const snapshot = buildMonthlyActivity('2026-08', personalRows, [

@@ -71,6 +71,13 @@ export class EarlyMonthlyCloseConfirmationError extends Error {
   }
 }
 
+export class HistoricalReconstructionConfirmationError extends Error {
+  constructor(period: string) {
+    super(`Debes escribir RECONSTRUIR ${period} para guardar este cierre histórico estimado.`);
+    this.name = 'HistoricalReconstructionConfirmationError';
+  }
+}
+
 export type MonthlySnapshotMetadata = {
   fromCache: boolean;
   hasPendingWrites: boolean;
@@ -107,11 +114,20 @@ function readMonthlySummary(period: string, data: Record<string, unknown>): Mont
     ? summary.totales_modulo as Record<string, number>
     : {};
   const status = data.estado === 'guardando' || data.estado === 'error' ? data.estado : 'completo';
+  const reconstruction = data.reconstruccion && typeof data.reconstruccion === 'object'
+    ? data.reconstruccion as Record<string, unknown>
+    : null;
 
   return {
     period,
     activity: data.actividad && typeof data.actividad === 'object' && (data.actividad as MonthlyActivityMetadata).version === 1
       ? { ...(data.actividad as MonthlyActivityMetadata), period } : null,
+    reconstruction: reconstruction?.tipo === 'precios_actuales' ? {
+      valuationBasis: 'current_prices',
+      sourcePeriod: typeof reconstruction.periodo_base === 'string' ? reconstruction.periodo_base : '',
+      cutoffAt: toDate(reconstruction.fecha_corte),
+      valuedAt: toDate(reconstruction.fecha_valoracion),
+    } : null,
     totalValue: Number(summary.valor_total) || 0,
     productCount: Number(summary.cantidad_productos) || 0,
     valuedProductCount: Number(summary.productos_con_valor) || 0,
@@ -157,16 +173,28 @@ export async function loadMonthlyValuationSummaryPage(
 ): Promise<MonthlyValuationSummaryPage> {
   const source = collection(db, MONTHLY_CLOSES_COLLECTION);
   const pageQuery = cursor
-    ? query(source, orderBy(documentId()), startAfter(cursor), firestoreLimit(pageSize))
-    : query(source, orderBy(documentId()), firestoreLimit(pageSize));
-  const snapshot = await getDocs(pageQuery);
-  const summaries = snapshot.docs
+    ? query(source, orderBy(documentId(), 'desc'), startAfter(cursor), firestoreLimit(pageSize))
+    : query(source, orderBy(documentId(), 'desc'), firestoreLimit(pageSize));
+  let documents;
+  try {
+    documents = (await getDocsFromServer(pageQuery)).docs;
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'failed-precondition') throw error;
+    // Legacy projects may lack a descending document-name index. Only read
+    // the small summary collection; item and movement subcollections are untouched.
+    documents = (await getDocsFromServer(source)).docs
+      .filter((entry) => !cursor || entry.id < cursor)
+      .sort((left, right) => right.id.localeCompare(left.id))
+      .slice(0, pageSize);
+  }
+  const summaries = documents
     .map((snapshotDoc) => readMonthlySummary(snapshotDoc.id, snapshotDoc.data()))
-    .filter((summary) => summary.status === 'completo');
+    .filter((summary) => summary.status === 'completo')
+    .sort((left, right) => right.period.localeCompare(left.period));
   return {
     summaries,
-    cursor: snapshot.docs.at(-1)?.id ?? cursor,
-    hasMore: snapshot.size === pageSize,
+    cursor: documents.at(-1)?.id ?? cursor,
+    hasMore: documents.length === pageSize,
   };
 }
 
@@ -246,6 +274,7 @@ export async function saveMonthlyValuationClose({
   movements,
   historyComplete,
   onProgress,
+  reconstruction,
 }: {
   period: string;
   rows: CurrentValuationRow[];
@@ -255,18 +284,30 @@ export async function saveMonthlyValuationClose({
   movements: readonly MonthlyActivitySource[];
   historyComplete: boolean;
   onProgress: (completedSteps: number, totalSteps: number) => void;
+  reconstruction?: {
+    cutoffAt: Date;
+    valuedAt: Date;
+    sourcePeriod: string;
+  };
 }) {
   const requestedAt = new Date();
   if (!historyComplete) throw new Error('El historial completo debe estar confirmado antes de guardar el gasto mensual.');
-  assertCurrentBogotaPeriod(period, requestedAt);
-  if (
-    !isLastBogotaDayOfMonth(requestedAt)
-    && !isEarlyCloseConfirmationValid(earlyConfirmation, `CERRAR ${period}`)
-  ) {
-    throw new EarlyMonthlyCloseConfirmationError(period);
+  if (reconstruction) {
+    if (period >= currentBogotaPeriod(requestedAt)) throw new Error('Solo se pueden reconstruir meses anteriores al actual.');
+    if (!isEarlyCloseConfirmationValid(earlyConfirmation, `RECONSTRUIR ${period}`)) {
+      throw new HistoricalReconstructionConfirmationError(period);
+    }
+  } else {
+    assertCurrentBogotaPeriod(period, requestedAt);
+    if (
+      !isLastBogotaDayOfMonth(requestedAt)
+      && !isEarlyCloseConfirmationValid(earlyConfirmation, `CERRAR ${period}`)
+    ) {
+      throw new EarlyMonthlyCloseConfirmationError(period);
+    }
   }
   const integrity = buildExpectedMonthlyCloseIntegrity(rows);
-  const activity = buildMonthlyActivity(period, rows, movements, requestedAt);
+  const activity = buildMonthlyActivity(period, rows, movements, reconstruction?.cutoffAt ?? requestedAt);
   const summary = summarizeCurrentValuation(rows, moduleOptions);
   const chunks = chunkArray(rows);
   const totalSteps = chunks.length + 5;
@@ -299,6 +340,14 @@ export async function saveMonthlyValuationClose({
       periodo: period,
       resumen: summaryPayload,
       actividad: monthlyActivityMetadata(activity),
+      ...(reconstruction ? {
+        reconstruccion: {
+          tipo: 'precios_actuales',
+          periodo_base: reconstruction.sourcePeriod,
+          fecha_corte: Timestamp.fromDate(reconstruction.cutoffAt),
+          fecha_valoracion: Timestamp.fromDate(reconstruction.valuedAt),
+        },
+      } : {}),
       fecha: serverTimestamp(),
       usuario: userLabel,
       usuario_uid: user.uid,

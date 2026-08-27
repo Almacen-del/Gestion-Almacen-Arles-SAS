@@ -60,6 +60,7 @@ function quantityFactor(quantityUnit: string, priceUnit: string) {
   const unit = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[.\s]/g, '');
   const aliases = (value: string) => {
     const key = unit(value);
+    if (/^\d+(?:,\d+)?$/.test(key)) return 'unidad';
     if (['g', 'gr', 'gramo', 'gramos'].includes(key)) return 'g';
     if (['kg', 'kilo', 'kilos', 'kilogramo', 'kilogramos'].includes(key)) return 'kg';
     if (['ml', 'mililitro', 'mililitros'].includes(key)) return 'ml';
@@ -413,7 +414,7 @@ export async function generateMonthlyActivityExcel(payload: MonthlyActivityExcel
   workbook.title = `Histórico mensual ${periodLabel(payload.summary.period)}`;
   workbook.subject = 'Inventario, movimientos y gasto mensual';
   workbook.calcProperties.fullCalcOnLoad = true;
-  const subtitle = `Corte: ${bogotaDateTime(payload.snapshot.cutoffAt)} · ${payload.snapshot.rows.length} movimientos`;
+  const subtitle = `${payload.summary.reconstruction ? `RECONSTRUIDO CON PRECIOS ACTUALES DE ${payload.summary.reconstruction.sourcePeriod} · ` : ''}Corte: ${bogotaDateTime(payload.snapshot.cutoffAt)} · ${payload.snapshot.rows.length} movimientos`;
 
   summarySheet(workbook, payload, subtitle);
   inventoryRows(workbook.addWorksheet('Inventario del corte'), payload.items, payload.summary.period, subtitle);

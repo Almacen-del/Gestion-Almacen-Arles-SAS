@@ -19,6 +19,13 @@ function summary(period: string, totalValue: number): MonthlyValuationSummary {
 }
 
 describe('paginación del histórico mensual', () => {
+  it('deja primero el mes más reciente aunque los anteriores se reconstruyan después', () => {
+    const newest = { ...summary('2027-01', 100), createdAt: new Date('2027-01-31') };
+    const older = { ...summary('2026-12', 90), createdAt: new Date('2027-02-01') };
+    const periods = mergeMonthlyValuationSummaryPages([], [older, summary('2026-06', 50), newest]);
+    expect(periods.map((entry) => entry.period)).toEqual(['2027-01', '2026-12', '2026-06']);
+  });
+
   it('deduplica periodos, conserva la versión más reciente y ordena por cursor mensual', () => {
     const firstPage = [summary('2026-07', 70), summary('2026-06', 60)];
     const secondPage = [summary('2026-06', 61), summary('2026-05', 50)];

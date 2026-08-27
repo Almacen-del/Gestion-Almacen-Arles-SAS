@@ -257,6 +257,7 @@ export function formatMonthlyActivityDate(value: string) {
 
 function unitKey(unit: string) {
   const key = normalizeMovementText(unit).replace(/[.\s]/g, '');
+  if (/^\d+(?:,\d+)?$/.test(key)) return 'unidad';
   if (['g', 'gr', 'gramo', 'gramos'].includes(key)) return 'g';
   if (['kg', 'kilo', 'kilos', 'kilogramo', 'kilogramos'].includes(key)) return 'kg';
   if (['ml', 'mililitro', 'mililitros'].includes(key)) return 'ml';
@@ -266,7 +267,7 @@ function unitKey(unit: string) {
   return key;
 }
 
-function quantityAtPriceUnit(quantity: number, from: string, to: string) {
+export function quantityAtPriceUnit(quantity: number, from: string, to: string) {
   const source = unitKey(from);
   const target = unitKey(to);
   if (source && source === target) return quantity;

@@ -7,6 +7,7 @@ import {
 } from './tallerCanonicos';
 import { modules } from './theme';
 import type { AgrochemicalLot } from './agrochemicalLots';
+import { normalizarUbicacionAgroquimicos } from './agroquimicosCanonicos';
 
 export const REPORTE_MOVIMIENTOS_FILENAME = 'Reporte_Movimientos_ARLES.xlsx';
 
@@ -54,6 +55,8 @@ export type MovimientoParaReporte = {
   horometro?: string;
   responsableEntrega?: string;
   productDocumentId?: string;
+  documentId?: string;
+  ubicacion?: string;
   lote?: string;
   fechaVencimiento?: string;
   lotesSalida?: LoteMovimientoReporte[];
@@ -69,6 +72,7 @@ export type InventarioParaReporte = {
   saldo_actual: number;
   submodulo?: string;
   codigos_alternos?: string[];
+  ubicacion?: string;
 };
 
 export type FilaMovimientoExcel = {
@@ -456,15 +460,44 @@ function unirEstados(...estados: Array<string | undefined>) {
   return [...new Set(estados.filter((estado): estado is string => Boolean(estado)))].join(' · ');
 }
 
+function productoParaLotes(
+  movimiento: MovimientoParaReporte,
+  inventario: readonly InventarioParaReporte[],
+  lotes: readonly AgrochemicalLot[],
+  inventarioVinculadoId?: string,
+): string | undefined {
+  if (!coincideModulo(movimiento.modulo, 'Agroquimicos')) return undefined;
+  // Algunos históricos guardan el código en producto_id y el ID real en documento_id.
+  const identidades = [...new Set([movimiento.documentId, movimiento.productDocumentId]
+    .map((id) => id?.trim()).filter((id): id is string => Boolean(id)))];
+  if (!identidades.length) return inventarioVinculadoId;
+  const existentes = new Set([...inventario.map((item) => item.id), ...lotes.map((lote) => lote.productDocumentId)]);
+  const exactos = identidades.filter((id) => existentes.has(id));
+  if (exactos.length) return exactos.length === 1 ? exactos[0] : undefined;
+
+  // Resolver un QR histórico de ubicación solo con código, nombre y ubicación coincidentes.
+  // No usar similitud de nombres ni ignorar una identidad explícita de otro producto.
+  const ubicacion = normalizarUbicacionAgroquimicos(movimiento.ubicacion || '');
+  if (!ubicacion || !codigoUtil(movimiento.codigo)) return undefined;
+  const candidatos = inventario.filter((item) => {
+    if (normalizarUbicacionAgroquimicos(item.ubicacion || '') !== ubicacion
+      || normalizar(item.descripcion) !== normalizar(movimiento.descripcion)
+      || normalizar(item.unidad) !== normalizar(movimiento.unidad)) return false;
+    const codigos = [item.codigo, ...(item.codigos_alternos ?? [])].filter(codigoUtil);
+    return codigos.some((codigo) => normalizar(codigo) === normalizar(movimiento.codigo)
+      && identidades.every((id) => normalizar(id) === normalizar(`Q-${codigo}-${ubicacion.replace(/\s+/g, '-')}`)));
+  });
+  return candidatos.length === 1 ? candidatos[0].id : undefined;
+}
+
 function lotesDelMovimiento(
   movimiento: MovimientoParaReporte,
   lotes: readonly AgrochemicalLot[],
-  inventarioId?: string,
+  productId?: string,
 ): LoteMovimientoReporte[] {
   if (!coincideModulo(movimiento.modulo, 'Agroquimicos')) return [];
   if (esSalida(movimiento) && movimiento.lotesSalida?.length) return movimiento.lotesSalida;
   if (esEntrada(movimiento)) {
-    const productId = movimiento.productDocumentId || inventarioId;
     const asignados = lotes.flatMap((lote) => {
       if (!productId || lote.productDocumentId !== productId) return [];
       const cantidad = lote.entryAssignments
@@ -484,11 +517,9 @@ function lotesDelMovimiento(
 function lotesReferenciaDelProducto(
   movimiento: MovimientoParaReporte,
   lotes: readonly AgrochemicalLot[],
-  inventarioId?: string,
+  productId?: string,
 ): LoteReferenciaReporte[] {
-  if (!coincideModulo(movimiento.modulo, 'Agroquimicos') || !esSalida(movimiento)) return [];
-  // La identidad explícita prevalece; sin ella solo se usa la vinculación única del inventario.
-  const productId = movimiento.productDocumentId || inventarioId;
+  if (!coincideModulo(movimiento.modulo, 'Agroquimicos') || (!esSalida(movimiento) && !esEntrada(movimiento))) return [];
   if (!productId) return [];
   return lotes
     .filter((lote) => lote.productDocumentId === productId && lote.quantity > 0)
@@ -592,7 +623,8 @@ function conciliarCategoria(
       if (!idsVisibles.has(movimiento.id)) return;
       const balance = balances.get(movimiento.id);
       if (!balance) return;
-      const lotesMovimiento = lotesDelMovimiento(movimiento, lotes, grupo.inventario?.id);
+      const productId = productoParaLotes(movimiento, inventarioActual, lotes, grupo.inventario?.id);
+      const lotesMovimiento = lotesDelMovimiento(movimiento, lotes, productId);
       filasPorMovimiento.set(
         movimiento.id,
         crearFilaMovimiento(
@@ -603,7 +635,7 @@ function conciliarCategoria(
           estadoGrupo,
           usuarios,
           lotesMovimiento,
-          lotesMovimiento.length ? [] : lotesReferenciaDelProducto(movimiento, lotes, grupo.inventario?.id),
+          lotesMovimiento.length ? [] : lotesReferenciaDelProducto(movimiento, lotes, productId),
         ),
       );
     });

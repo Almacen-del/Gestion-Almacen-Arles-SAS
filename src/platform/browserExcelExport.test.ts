@@ -161,7 +161,7 @@ describe('Excel uniforme de los módulos', () => {
       expect(sheet.getCell('I8').value).toBe('2027-07\n2028-01-31');
       expect(sheet.getCell('D8').value).toBe(5000);
       expect(sheet.getCell('G8').value).toBe('Lote: 28 · Resp.: Juan Pérez');
-      expect(sheet.getCell('A5').text).toContain('lote consumido en la salida no confirmado');
+      expect(sheet.getCell('A5').text).toContain('no confirman el lote de la entrada ni el consumido en la salida');
     }
     const consolidado = wb.getWorksheet('Consolidado por producto')!;
     expect(consolidado.getCell('H8').text).not.toContain('referencia');

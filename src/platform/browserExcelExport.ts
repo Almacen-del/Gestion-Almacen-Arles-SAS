@@ -91,8 +91,8 @@ function fechaExcel(valor: string): ExcelJS.CellValue {
 }
 
 function celdasLotes(fila: FilaReporte): [ExcelJS.CellValue, ExcelJS.CellValue] {
-  if (fila.salida > 0 && !fila.lotes.length && fila.lotesReferencia?.length) {
-    // Son referencias del inventario actual, sin atribuirles cantidades de esta salida.
+  if ((fila.salida > 0 || fila.entrada > 0) && !fila.lotes.length && fila.lotesReferencia?.length) {
+    // Son referencias del inventario actual, sin atribuirles cantidades de este movimiento.
     const nombres = fila.lotesReferencia.map((lote) => `${lote.numero || 'Sin número'} (referencia actual)`);
     const fechas = fila.lotesReferencia.map((lote) => lote.vencimiento || 'Sin fecha');
     return [nombres.join('\n'), fechas.length === 1 ? fechaExcel(fechas[0]) : fechas.join('\n')];
@@ -135,7 +135,7 @@ function crearHoja(
   sheet.columns = anchos.map((width) => ({ width }));
   const ultimaColumna = sheet.getColumn(columnas.length).letter;
   const tieneReferencias = agro && filas.some((fila) => (
-    fila.salida > 0 && !fila.lotes.length && Boolean(fila.lotesReferencia?.length)
+    (fila.salida > 0 || fila.entrada > 0) && !fila.lotes.length && Boolean(fila.lotesReferencia?.length)
   ));
   const encabezados = [
     `${payload.companyName}  |  ${payload.moduleName.toLocaleUpperCase()}`,
@@ -147,7 +147,7 @@ function crearHoja(
       : 'Cantidad: unidades del movimiento. Entrada / salida: cantidad según su dirección. Fechas según el registro original.',
   ];
   if (tieneReferencias) {
-    encabezados[4] += '\nLotes de referencia: inventario actual; lote consumido en la salida no confirmado.';
+    encabezados[4] += '\nLotes de referencia: inventario actual; no confirman el lote de la entrada ni el consumido en la salida.';
   }
   encabezados.forEach((texto, indice) => {
     const numero = indice + 1;

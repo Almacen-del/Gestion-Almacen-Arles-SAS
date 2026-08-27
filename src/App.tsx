@@ -257,6 +257,7 @@ type Movement = {
   horometro?: string;
   responsableEntrega?: string;
   productDocumentId?: string;
+  documentId?: string;
   stockBefore?: number;
   stockAfter?: number;
   lote?: string;
@@ -709,6 +710,7 @@ function readMovementDoc(doc: QueryDocumentSnapshot): Movement {
     responsableEntrega: textValue(data, 'responsable_entrega', 'registradoPor'),
     ubicacion: textValue(data, 'ubicacion'),
     productDocumentId: textValue(data, 'producto_id', 'documento_id', 'herramientaId', 'herramienta_clave') || undefined,
+    documentId: textValue(data, 'documento_id') || undefined,
     lote: textValue(data, 'numero_lote', 'lote', 'numeroLote'),
     fechaVencimiento: dateTextValue(data, 'fecha_vencimiento', 'fechaVencimiento', 'vencimiento'),
     lotesSalida: leerLotesSalidaReporte(data),
@@ -822,6 +824,7 @@ function inventoryItemForReport(item: InventoryItem): InventarioParaReporte {
     saldo_actual: item.saldo,
     submodulo: item.categoria,
     codigos_alternos: item.codigoQr ? [item.codigoQr] : undefined,
+    ubicacion: item.ubicacion,
   };
 }
 

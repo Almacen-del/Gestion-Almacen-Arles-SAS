@@ -13,6 +13,7 @@ export const REPORTE_MOVIMIENTOS_FILENAME = 'Reporte_Movimientos_ARLES.xlsx';
 export const MODULOS_ORDEN = modules;
 
 export type LoteMovimientoReporte = { numero: string; vencimiento: string; cantidad: number };
+export type LoteReferenciaReporte = Pick<LoteMovimientoReporte, 'numero' | 'vencimiento'>;
 
 export function leerLotesSalidaReporte(data: Record<string, unknown>): LoteMovimientoReporte[] {
   if (!Array.isArray(data.lotes_salida)) return [];
@@ -75,6 +76,7 @@ export type FilaMovimientoExcel = {
   fecha_ingreso: string;
   fecha_salida: string;
   lotes: LoteMovimientoReporte[];
+  lotes_referencia?: LoteReferenciaReporte[];
   fecha: string;
   tipo_movimiento: string;
   codigo: string;
@@ -345,6 +347,7 @@ function crearFilaMovimiento(
   estadoConciliacion: string,
   usuarios: UsuarioLookup,
   lotes: LoteMovimientoReporte[],
+  lotesReferencia: LoteReferenciaReporte[],
 ): FilaMovimientoExcel {
   const contextoSubmodulo = categoria.moduleName === 'TALLER' ? (categoria.submodulo ?? '') : '';
   return {
@@ -352,6 +355,7 @@ function crearFilaMovimiento(
     fecha_ingreso: esEntrada(movimiento, categoria.moduleName, contextoSubmodulo) ? movimiento.fecha : '',
     fecha_salida: esSalida(movimiento, categoria.moduleName, contextoSubmodulo) ? movimiento.fecha : '',
     lotes,
+    lotes_referencia: lotesReferencia,
     fecha: movimiento.fecha || 'Sin fecha',
     tipo_movimiento: movimiento.tipo || 'Movimiento',
     codigo: movimiento.codigo || 'Sin código',
@@ -477,6 +481,21 @@ function lotesDelMovimiento(
     : [];
 }
 
+function lotesReferenciaDelProducto(
+  movimiento: MovimientoParaReporte,
+  lotes: readonly AgrochemicalLot[],
+  inventarioId?: string,
+): LoteReferenciaReporte[] {
+  if (!coincideModulo(movimiento.modulo, 'Agroquimicos') || !esSalida(movimiento)) return [];
+  // La identidad explícita prevalece; sin ella solo se usa la vinculación única del inventario.
+  const productId = movimiento.productDocumentId || inventarioId;
+  if (!productId) return [];
+  return lotes
+    .filter((lote) => lote.productDocumentId === productId && lote.quantity > 0)
+    .map((lote) => ({ numero: lote.lotNumber, vencimiento: lote.expirationDate }))
+    .sort((a, b) => a.vencimiento.localeCompare(b.vencimiento) || a.numero.localeCompare(b.numero));
+}
+
 function conciliarCategoria(
   movimientosVisibles: MovimientoParaReporte[],
   historialCompleto: MovimientoParaReporte[],
@@ -573,6 +592,7 @@ function conciliarCategoria(
       if (!idsVisibles.has(movimiento.id)) return;
       const balance = balances.get(movimiento.id);
       if (!balance) return;
+      const lotesMovimiento = lotesDelMovimiento(movimiento, lotes, grupo.inventario?.id);
       filasPorMovimiento.set(
         movimiento.id,
         crearFilaMovimiento(
@@ -582,7 +602,8 @@ function conciliarCategoria(
           balance.nuevo,
           estadoGrupo,
           usuarios,
-          lotesDelMovimiento(movimiento, lotes, grupo.inventario?.id),
+          lotesMovimiento,
+          lotesMovimiento.length ? [] : lotesReferenciaDelProducto(movimiento, lotes, grupo.inventario?.id),
         ),
       );
     });

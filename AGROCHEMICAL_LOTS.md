@@ -61,6 +61,15 @@ Las salidas deben usar FEFO: primero vence, primero sale.
 
 La función pura `allocateAgrochemicalExitFefo` en `src/agrochemicalLots.ts` define y prueba esa distribución, pero esta web no ejecuta el descuento.
 
+## Lotes en el Excel de movimientos
+
+Las salidas con `lotes_salida` conservan sus asignaciones y cantidades originales. Si una salida
+no tiene datos de lote, el Excel muestra los lotes con saldo del mismo producto como
+`referencia actual`, sin cantidades atribuidas al consumo. Una nota aclara que el lote
+consumido no está confirmado. Esta referencia usa `producto_id` o una vinculación única
+del inventario, no el lote de cultivo/destino escrito en observaciones. No modifica Firestore.
+Las entradas mantienen sus asignaciones de origen y el consolidado muestra los lotes actuales.
+
 ## Relación con obsolescencia
 
 - Lote vencido con existencias: bloqueado para salida y pendiente de revisión de obsolescencia.

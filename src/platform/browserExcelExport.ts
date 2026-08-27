@@ -3,6 +3,7 @@ import type {
   FilaConsolidadoExcel,
   FilaMovimientoExcel,
   LoteMovimientoReporte,
+  LoteReferenciaReporte,
   ReporteMovimientosPayload,
 } from '../reporteMovimientosExcel';
 
@@ -25,6 +26,7 @@ type FilaReporte = {
   observaciones: string;
   unidad: string;
   lotes: LoteMovimientoReporte[];
+  lotesReferencia?: LoteReferenciaReporte[];
 };
 
 function nombreConReferencia(fila: FilaMovimientoExcel | FilaConsolidadoExcel) {
@@ -41,6 +43,7 @@ function filaMovimiento(fila: FilaMovimientoExcel): FilaReporte {
     fechaIngreso: fila.fecha_ingreso, fechaSalida: fila.fecha_salida,
     observaciones: fila.observacion,
     unidad: fila.unidad, lotes: fila.lotes,
+    lotesReferencia: fila.lotes_referencia,
   };
 }
 
@@ -88,6 +91,12 @@ function fechaExcel(valor: string): ExcelJS.CellValue {
 }
 
 function celdasLotes(fila: FilaReporte): [ExcelJS.CellValue, ExcelJS.CellValue] {
+  if (fila.salida > 0 && !fila.lotes.length && fila.lotesReferencia?.length) {
+    // Son referencias del inventario actual, sin atribuirles cantidades de esta salida.
+    const nombres = fila.lotesReferencia.map((lote) => `${lote.numero || 'Sin número'} (referencia actual)`);
+    const fechas = fila.lotesReferencia.map((lote) => lote.vencimiento || 'Sin fecha');
+    return [nombres.join('\n'), fechas.length === 1 ? fechaExcel(fechas[0]) : fechas.join('\n')];
+  }
   const lotes = [...fila.lotes];
   const asignado = lotes.reduce((total, lote) => total + lote.cantidad, 0);
   const pendiente = fila.cantidad === null ? 0 : fila.cantidad - asignado;
@@ -125,6 +134,9 @@ function crearHoja(
   });
   sheet.columns = anchos.map((width) => ({ width }));
   const ultimaColumna = sheet.getColumn(columnas.length).letter;
+  const tieneReferencias = agro && filas.some((fila) => (
+    fila.salida > 0 && !fila.lotes.length && Boolean(fila.lotesReferencia?.length)
+  ));
   const encabezados = [
     `${payload.companyName}  |  ${payload.moduleName.toLocaleUpperCase()}`,
     categoria === payload.moduleName ? nombre : `${nombre} · ${categoria}`,
@@ -134,6 +146,9 @@ function crearHoja(
       ? 'Cantidad: disponible actual. Entrada y salida: totales del período. Fechas: última entrada y última salida del período.'
       : 'Cantidad: unidades del movimiento. Entrada / salida: cantidad según su dirección. Fechas según el registro original.',
   ];
+  if (tieneReferencias) {
+    encabezados[4] += '\nLotes de referencia: inventario actual; lote consumido en la salida no confirmado.';
+  }
   encabezados.forEach((texto, indice) => {
     const numero = indice + 1;
     sheet.mergeCells(numero, 1, numero, columnas.length);
@@ -145,7 +160,7 @@ function crearHoja(
       color: { argb: indice === 0 ? COLOR.blanco : COLOR.marca },
     };
     celda.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
-    sheet.getRow(numero).height = indice < 2 ? 30 : 28;
+    sheet.getRow(numero).height = indice < 2 ? 30 : indice === 4 && tieneReferencias ? 42 : 28;
   });
   sheet.getRow(6).height = 10;
   const header = sheet.getRow(FILA_ENCABEZADO);

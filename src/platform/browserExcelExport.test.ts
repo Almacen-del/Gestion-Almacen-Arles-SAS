@@ -116,6 +116,7 @@ describe('Excel uniforme de los módulos', () => {
     const { wb, bytes, payload } = await exportar('Agroquimicos', [movimiento(), salida], lotes);
     expect(payload.entradasGenerales[0].lotes.map((l) => l.cantidad)).toEqual([30000, 20000]);
     expect(payload.categorias[0].consolidated[0].lotes.map((l) => l.cantidad)).toEqual([20000, 15000]);
+    expect(payload.salidasGenerales[0].lotes_referencia).toEqual([]);
     const sheet = wb.getWorksheet('Salidas')!;
     expect(sheet.getCell('D8').value).toBe(15000);
     expect(sheet.getCell('H8').value).toBe('LOTE-A (10.000 GRAMO)\nLOTE-B (5.000 GRAMO)');
@@ -129,13 +130,81 @@ describe('Excel uniforme de los módulos', () => {
     }
   });
 
-  it('no atribuye lotes actuales a salidas antiguas ni lotes de otro producto a una entrada', async () => {
+  it('no usa lotes de otro producto para una entrada ni como referencia de una salida', async () => {
     const antiguos = movimiento({ id: 'antigua', tipo: 'Salida', cantidad: 5000 });
     const { wb, payload } = await exportar('Agroquimicos', [movimiento(), antiguos], [lote({ productDocumentId: 'otro-producto' })]);
     expect(payload.entradasGenerales[0].lotes).toEqual([]);
     expect(payload.salidasGenerales[0].lotes).toEqual([]);
+    expect(payload.salidasGenerales[0].lotes_referencia).toEqual([]);
     expect(wb.getWorksheet('Salidas')!.getCell('H8').value).toBe('Sin asignar (5.000 GRAMO)');
     expect(wb.getWorksheet('Salidas')!.getCell('I8').value).toBe('Sin fecha');
+  });
+
+  it('exporta referencias actuales separadas de la asignación de salida sin copiar cantidades', async () => {
+    const salida = movimiento({ id: 'antigua', tipo: 'Salida', cantidad: 5000 });
+    const lotes = [
+      lote({ id: 'otro', productDocumentId: 'otro-producto', lotNumber: 'AJENO' }),
+      lote({ id: 'agotado', quantity: 0, lotNumber: 'AGOTADO' }),
+      lote({ id: 'b', lotNumber: 'LOTE-B', expirationDate: '2028-01-31', quantity: 100 }),
+      lote(),
+    ];
+    const original = structuredClone({ salida, lotes });
+    const { wb, payload } = await exportar('Agroquimicos', [salida], lotes);
+    expect(payload.salidasGenerales[0].lotes).toEqual([]);
+    expect(payload.salidasGenerales[0].lotes_referencia).toEqual([
+      { numero: 'LOTE-A', vencimiento: '2027-07' },
+      { numero: 'LOTE-B', vencimiento: '2028-01-31' },
+    ]);
+    for (const nombre of ['Salidas', 'Movimientos generales']) {
+      const sheet = wb.getWorksheet(nombre)!;
+      expect(sheet.getCell('H8').value).toBe('LOTE-A (referencia actual)\nLOTE-B (referencia actual)');
+      expect(sheet.getCell('I8').value).toBe('2027-07\n2028-01-31');
+      expect(sheet.getCell('D8').value).toBe(5000);
+      expect(sheet.getCell('G8').value).toBe('Lote: 28 · Resp.: Juan Pérez');
+      expect(sheet.getCell('A5').text).toContain('lote consumido en la salida no confirmado');
+    }
+    const consolidado = wb.getWorksheet('Consolidado por producto')!;
+    expect(consolidado.getCell('H8').text).not.toContain('referencia');
+    expect(consolidado.getCell('H8').text).toContain('LOTE-A (20.000 GRAMO)');
+    expect({ salida, lotes }).toEqual(original);
+  });
+
+  it('no propone referencias si el código es ambiguo y la salida no identifica el producto', () => {
+    const salida = movimiento({ id: 'salida', tipo: 'Salida', productDocumentId: undefined });
+    const payload = crearReporteMovimientos({
+      moduleName: 'Agroquimicos', movimientos: [salida],
+      inventarioActual: ['producto', 'duplicado'].map((id) => ({
+        id, modulo: 'Agroquimicos', codigo: salida.codigo, descripcion: salida.descripcion,
+        referencia: salida.referencia, unidad: salida.unidad, saldo_actual: 20000,
+      })),
+      lotesAgroquimicos: [lote()], usuarios: {}, periodLabel: '', exportDate: '', generatedBy: '', coverageLabel: '',
+    });
+    expect(payload.salidasGenerales[0].lotes_referencia).toEqual([]);
+  });
+
+  it.each([
+    ['2027-07', '2027-07'],
+    ['2028-01-31', new Date('2028-01-31T00:00:00Z')],
+  ])('respeta la precisión de la fecha %s en una referencia con vinculación única por código', async (fecha, esperada) => {
+    const salida = movimiento({ id: 'salida', tipo: 'Salida', productDocumentId: undefined });
+    const { wb } = await exportar('Agroquimicos', [salida], [lote({ expirationDate: fecha as string })]);
+    expect(wb.getWorksheet('Salidas')!.getCell('H8').value).toBe('LOTE-A (referencia actual)');
+    expect(wb.getWorksheet('Salidas')!.getCell('I8').value).toEqual(esperada);
+  });
+
+  it('no sustituye una asignación parcial ni una identidad explícita por referencias de otro producto', async () => {
+    const parcial = movimiento({
+      id: 'parcial', tipo: 'Salida', cantidad: 5000,
+      lotesSalida: [{ numero: 'ORIGINAL', vencimiento: '2027-08', cantidad: 1000 }],
+    });
+    const otraIdentidad = movimiento({
+      id: 'otra', tipo: 'Salida', productDocumentId: 'otro-producto', cantidad: 5000,
+    });
+    const { wb, payload } = await exportar('Agroquimicos', [parcial, otraIdentidad], [lote()]);
+    expect(payload.salidasGenerales.every((fila) => !fila.lotes_referencia?.length)).toBe(true);
+    expect(wb.getWorksheet('Salidas')!.getCell('H8').value).toBe('ORIGINAL (1.000 GRAMO)\nSin asignar (4.000 GRAMO)');
+    expect(wb.getWorksheet('Salidas')!.getCell('I8').value).toBe('2027-08\nSin fecha');
+    expect(wb.getWorksheet('Salidas')!.getCell('H9').value).toBe('Sin asignar (5.000 GRAMO)');
   });
 
   it('muestra cantidades pendientes y conserva el mes exacto de un único lote', async () => {

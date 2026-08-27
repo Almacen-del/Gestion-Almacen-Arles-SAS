@@ -2107,6 +2107,45 @@ td {
   min-width: 4.5rem;
 }
 
+.agro-location-editor {
+  width: 7rem;
+  max-width: 100%;
+}
+
+.agro-location-editor select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 5px 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.agro-location-editor select:focus-visible {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
+}
+
+.agro-location-editor select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.agro-location-editor small:not(:empty) {
+  display: block;
+  margin-top: 3px;
+  color: var(--green-800);
+  font-size: 0.85em;
+}
+
+.agro-location-editor .agro-location-error {
+  color: #b42318;
+}
+
 .inventory-table th.col-status,
 .inventory-table td.col-status {
   min-width: 6.5rem;

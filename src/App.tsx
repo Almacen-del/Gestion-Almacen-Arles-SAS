@@ -1,4 +1,6 @@
 import ColumnFilterTable from './ui/ColumnFilterTable';
+import AgrochemicalLocationSelect from './ui/AgrochemicalLocationSelect';
+import { saveAgrochemicalLocation } from './agroquimicosUbicacion';
 import { type CSSProperties, type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUserRoleListener } from './hooks/useUserRoleListener';
 
@@ -2937,7 +2939,25 @@ function AppShell({ user }: { user: User }) {
                           <tr key={item.id}>
                             <td className="code col-code">{item.codigo}</td>
                             <td className="col-desc">{item.descripcion}</td>
-                            <td className="col-ref">{item.ubicacion || 'Sin ubicación'}</td>
+                            <td className="col-ref" data-filter-value={item.ubicacion || 'Sin ubicación'}>
+                              <AgrochemicalLocationSelect
+                                location={item.ubicacion || ''}
+                                productLabel={`${item.codigo} · ${item.descripcion}`}
+                                blockedReason={!online
+                                  ? 'Conéctate a internet para cambiar la ubicación.'
+                                  : !isServerSourceReady(firestoreSources.inventory)
+                                    ? 'Esperando sincronización con Firestore.'
+                                    : ''}
+                                onSave={(location) => saveAgrochemicalLocation({
+                                  db,
+                                  productId: item.id,
+                                  expectedLocation: item.ubicacion || '',
+                                  location,
+                                  online,
+                                  sourceReady: isServerSourceReady(firestoreSources.inventory),
+                                })}
+                              />
+                            </td>
                             <td className="col-ref">{item.subcategoria || 'Sin subcategoría'}</td>
                             <td className="numeric">{formatNumber(itemTotals.entradas)}</td>
                             <td className="numeric">{formatNumber(itemTotals.salidas)}</td>

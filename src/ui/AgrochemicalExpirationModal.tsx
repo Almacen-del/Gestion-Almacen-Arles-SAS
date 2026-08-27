@@ -27,6 +27,7 @@ export type AgrochemicalLotRegistration = {
   quantity: number;
   receivedAt: string;
   sourceEntryId?: string;
+  linkExistingLotWithoutStockIncrease?: boolean;
 };
 
 const STATUS_LABELS: Record<AgrochemicalLotStatus, string> = {
@@ -97,11 +98,13 @@ export default function AgrochemicalExpirationModal({
   const existingLotsForSelectedProduct = useMemo(() => sortedLots.filter((lot) => (
     lot.productDocumentId === productDocumentId
   )), [productDocumentId, sortedLots]);
+  const selectedExistingLot = existingLotsForSelectedProduct.find((lot) => lot.id === selectedExistingLotId);
   const unassignedQuantity = selectedProduct
     ? Math.max(0, selectedProduct.stock - (lotQuantityByProduct.get(selectedProduct.id) ?? 0))
     : 0;
+  const linkingExistingLotWithoutStockIncrease = Boolean(selectedEntry && selectedExistingLot);
   const registrationLimit = selectedEntry
-    ? Math.min(selectedEntry.pendingQuantity, unassignedQuantity)
+    ? selectedEntry.pendingQuantity
     : unassignedQuantity;
   const statusCounts = useMemo(() => sortedLots.reduce<Record<AgrochemicalLotStatus, number>>((counts, lot) => {
     const status = classifyAgrochemicalLot(lot, today);
@@ -122,7 +125,7 @@ export default function AgrochemicalExpirationModal({
     if (!lotNumber.trim()) return setFormError('Escribe el número de lote.');
     if (!expirationDate) return setFormError('Selecciona la fecha de vencimiento.');
     if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return setFormError('La cantidad debe ser mayor que cero.');
-    if (parsedQuantity > unassignedQuantity) {
+    if (!selectedEntry && parsedQuantity > unassignedQuantity) {
       return setFormError(`Solo hay ${formatQuantity(unassignedQuantity)} ${selectedProduct.unit} sin asignar a lote.`);
     }
     if (selectedEntry && parsedQuantity > selectedEntry.pendingQuantity + 1e-7) {
@@ -137,8 +140,11 @@ export default function AgrochemicalExpirationModal({
         quantity: parsedQuantity,
         receivedAt,
         sourceEntryId: selectedEntry?.id,
+        linkExistingLotWithoutStockIncrease: linkingExistingLotWithoutStockIncrease,
       });
-      setSavedMessage(`Lote ${lotNumber.trim()} registrado sin modificar el saldo general.`);
+      setSavedMessage(linkingExistingLotWithoutStockIncrease
+        ? `Entrada vinculada al lote ${lotNumber.trim()} sin aumentar su saldo.`
+        : `Lote ${lotNumber.trim()} registrado sin modificar el saldo general.`);
       setLotNumber('');
       setExpirationDate('');
       setQuantity('');
@@ -290,7 +296,9 @@ export default function AgrochemicalExpirationModal({
               </label>
               <label>Cantidad del lote
                 <input type="number" min="0.01" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-                {selectedProduct && <small>{selectedEntry ? 'Pendiente de esta entrada' : 'Sin asignar'}: {formatQuantity(registrationLimit)} {selectedProduct.unit}</small>}
+                {selectedProduct && <small>{linkingExistingLotWithoutStockIncrease
+                  ? `Pendiente de esta entrada: ${formatQuantity(registrationLimit)} ${selectedProduct.unit}. Se vinculará al lote sin aumentar su saldo.`
+                  : `${selectedEntry ? 'Pendiente de esta entrada' : 'Sin asignar'}: ${formatQuantity(registrationLimit)} ${selectedProduct.unit}`}</small>}
               </label>
               <label>Fecha de ingreso
                 <input type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} />

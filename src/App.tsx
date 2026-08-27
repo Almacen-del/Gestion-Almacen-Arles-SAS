@@ -1950,14 +1950,16 @@ function AppShell({ user }: { user: User }) {
     const assignedQuantity = agrochemicalLots
       .filter((lot) => lot.productDocumentId === product.id)
       .reduce((sum, lot) => sum + Math.max(0, lot.quantity), 0);
-    if (assignedQuantity + registration.quantity > product.saldo + 1e-7) {
-      throw new Error('La cantidad del lote supera el saldo del producto que todavía no tiene lote asignado.');
-    }
-
     const sourceEntry = registration.sourceEntryId
       ? entryStockMovements.find((entry) => entry.id === registration.sourceEntryId)
       : undefined;
     if (registration.sourceEntryId && !sourceEntry) throw new Error('La entrada móvil ya no está disponible.');
+    if (!sourceEntry && assignedQuantity + registration.quantity > product.saldo + 1e-7) {
+      throw new Error('La cantidad del lote supera el saldo del producto que todavía no tiene lote asignado.');
+    }
+    if (registration.linkExistingLotWithoutStockIncrease && !sourceEntry) {
+      throw new Error('Solo una entrada móvil pendiente puede vincularse a un lote existente sin aumentar saldo.');
+    }
     if (sourceEntry) {
       if (sourceEntry.validationIssue) throw new Error(sourceEntry.validationIssue);
       if (sourceEntry.productId !== product.id || !moduleMatches(sourceEntry.moduleName, 'Agroquimicos')) {
@@ -1982,7 +1984,7 @@ function AppShell({ user }: { user: User }) {
         throw new Error('El producto cambió y ya no pertenece a Agroquímicos.');
       }
       const liveStock = numberValue(currentProduct.data(), 'cantidad', 'stock_actual', 'stock', 'saldo');
-      if (assignedQuantity + registration.quantity > liveStock + 1e-7) {
+      if (!sourceEntry && assignedQuantity + registration.quantity > liveStock + 1e-7) {
         throw new Error('El saldo del producto cambió y ya no permite asignar esa cantidad.');
       }
 
@@ -1993,6 +1995,8 @@ function AppShell({ user }: { user: User }) {
           normalize(existingLotNumber) !== normalize(registration.lotNumber)
           || existingExpiration !== registration.expirationDate
         ) throw new Error('El identificador del lote coincide con un registro de datos diferentes.');
+      } else if (registration.linkExistingLotWithoutStockIncrease) {
+        throw new Error('El lote seleccionado ya no existe; no se puede vincular una entrada sin aumentar saldo.');
       }
 
       let entryAssignments = currentLot.exists()
@@ -2042,6 +2046,7 @@ function AppShell({ user }: { user: User }) {
       const previousReceivedAt = currentLot.exists()
         ? dateTextValue(currentLot.data(), 'fecha_ingreso', 'fecha_entrada', 'createdAt', 'creado_en')
         : '';
+      const quantityToAddToLot = registration.linkExistingLotWithoutStockIncrease ? 0 : registration.quantity;
       transaction.set(lotRef, {
         producto_id: product.id,
         codigo_producto: product.codigo,
@@ -2049,8 +2054,8 @@ function AppShell({ user }: { user: User }) {
         numero_lote: registration.lotNumber,
         fecha_vencimiento: registration.expirationDate,
         fecha_ingreso: previousReceivedAt || registration.receivedAt,
-        cantidad_inicial: previousInitialQuantity + registration.quantity,
-        cantidad_disponible: previousLotQuantity + registration.quantity,
+        cantidad_inicial: previousInitialQuantity + quantityToAddToLot,
+        cantidad_disponible: previousLotQuantity + quantityToAddToLot,
         asignaciones_entrada: entryAssignments.map((entry) => ({
           entrada_id: entry.entryId,
           cantidad: entry.quantity,

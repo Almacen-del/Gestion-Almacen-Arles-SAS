@@ -36,7 +36,7 @@ Ver [configuración, pruebas y estado de instalación](integrations/expiry-alert
 
 ## Entradas móviles pendientes
 
-La web consulta los movimientos `entrada_stock` de Agroquímicos y compara su cantidad con lo ya asignado a lotes. Una entrada nueva aparece automáticamente como pendiente, sin modificar el movimiento original. Desde esa fila se registra el lote y su fecha de vencimiento; una entrada puede dividirse entre varios lotes. Si varias entradas corresponden al mismo lote físico, se elige ese lote ya registrado: la web completa número y vencimiento, conserva su primera fecha de ingreso y suma la nueva entrada a la trazabilidad del mismo lote.
+La web consulta los movimientos `entrada_stock` de Agroquímicos y compara su cantidad con lo ya asignado a lotes. Una entrada nueva aparece automáticamente como pendiente, sin modificar el movimiento original. Desde esa fila se registra el lote y su fecha de vencimiento; una entrada puede dividirse entre varios lotes. El límite de una entrada pendiente siempre es su propia cantidad móvil menos lo que ya se le asignó: no usa el inventario físico actual. Si varias entradas corresponden al mismo lote físico, se elige ese lote ya registrado: la web completa número y vencimiento, conserva su primera fecha de ingreso y vincula la nueva entrada a la trazabilidad del mismo lote sin aumentar `cantidad_inicial` ni `cantidad_disponible`.
 
 El acumulado transaccional de cada entrada se conserva en:
 

@@ -6,7 +6,7 @@ import {
   movementDisplayCount,
   nextMovementDisplayLimit,
   movementPageHasMore,
-  shouldAutoLoadCompleteMovementHistory,
+  shouldAutoLoadMovementPage,
   type MovementViewRecord,
 } from './movementView';
 import { crearReporteMovimientos } from './reporteMovimientosExcel';
@@ -150,33 +150,47 @@ describe('fuente única de movimientos', () => {
     expect(loadedMovementHistoryCoversDate(records, '')).toBe(false);
   });
 
-  it('completa automáticamente el historial si el módulo activo no aparece en la primera página', () => {
+  it('continúa automáticamente por bloques, incluso después de 1.000 movimientos cargados', () => {
     const baseState = {
-      activeScopeHasMovements: false,
-      alreadyAttempted: false,
+      isOperationalModule: true,
       hasMoreMovements: true,
       isLoading: false,
       isOnline: true,
       isServerReady: true,
-      isValuationModule: false,
+      hasError: false,
+      isExporting: false,
     };
 
-    expect(shouldAutoLoadCompleteMovementHistory(baseState)).toBe(true);
-    expect(shouldAutoLoadCompleteMovementHistory({
-      ...baseState,
-      activeScopeHasMovements: true,
+    let total = 250;
+    for (const size of [250, 250, 250, 250, 37]) {
+      expect(shouldAutoLoadMovementPage(baseState)).toBe(true);
+      expect(shouldAutoLoadMovementPage({ ...baseState, isLoading: true })).toBe(false);
+      total += size;
+      baseState.hasMoreMovements = movementPageHasMore(size);
+    }
+    expect(total).toBe(1287);
+    expect(shouldAutoLoadMovementPage(baseState)).toBe(false);
+  });
+
+  it.each([
+    { isOperationalModule: false }, { hasMoreMovements: false },
+    { isLoading: true }, { isOnline: false }, { isServerReady: false },
+    { hasError: true }, { isExporting: true },
+  ])('pausa la carga cuando no es seguro continuar: %j', (override) => {
+    expect(shouldAutoLoadMovementPage({
+      isOperationalModule: true, hasMoreMovements: true, isLoading: false,
+      isOnline: true, isServerReady: true, hasError: false, isExporting: false,
+      ...override,
     })).toBe(false);
-    expect(shouldAutoLoadCompleteMovementHistory({
-      ...baseState,
-      alreadyAttempted: true,
-    })).toBe(false);
-    expect(shouldAutoLoadCompleteMovementHistory({
-      ...baseState,
-      isOnline: false,
-    })).toBe(false);
-    expect(shouldAutoLoadCompleteMovementHistory({
-      ...baseState,
-      isValuationModule: true,
-    })).toBe(false);
+  });
+
+  it('reanuda al recuperar conexión o reintentar, sin marcar el módulo como intentado para siempre', () => {
+    const state = {
+      isOperationalModule: true, hasMoreMovements: true, isLoading: false,
+      isOnline: false, isServerReady: false, hasError: true, isExporting: false,
+    };
+    expect(shouldAutoLoadMovementPage(state)).toBe(false);
+    expect(shouldAutoLoadMovementPage({ ...state, isOnline: true, isServerReady: true })).toBe(false);
+    expect(shouldAutoLoadMovementPage({ ...state, isOnline: true, isServerReady: true, hasError: false })).toBe(true);
   });
 });

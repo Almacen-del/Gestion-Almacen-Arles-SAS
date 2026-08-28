@@ -36,13 +36,13 @@ export type MovementViewFilters<T extends MovementViewRecord> = {
 };
 
 export type MovementHistoryAutoLoadState = {
-  activeScopeHasMovements: boolean;
-  alreadyAttempted: boolean;
+  isOperationalModule: boolean;
   hasMoreMovements: boolean;
   isLoading: boolean;
   isOnline: boolean;
   isServerReady: boolean;
-  isValuationModule: boolean;
+  hasError: boolean;
+  isExporting: boolean;
 };
 
 export const MOVEMENT_PAGE_SIZE = 250;
@@ -73,22 +73,22 @@ export function loadedMovementHistoryCoversDate(
   return Boolean(oldestLoadedDate && oldestLoadedDate <= dateFrom);
 }
 
-export function shouldAutoLoadCompleteMovementHistory({
-  activeScopeHasMovements,
-  alreadyAttempted,
+export function shouldAutoLoadMovementPage({
+  isOperationalModule,
   hasMoreMovements,
   isLoading,
   isOnline,
   isServerReady,
-  isValuationModule,
+  hasError,
+  isExporting,
 }: MovementHistoryAutoLoadState) {
-  return !isValuationModule
+  return isOperationalModule
     && isOnline
     && isServerReady
     && hasMoreMovements
     && !isLoading
-    && !activeScopeHasMovements
-    && !alreadyAttempted;
+    && !hasError
+    && !isExporting;
 }
 
 export function normalizeMovementText(text: string) {

@@ -142,7 +142,7 @@ import {
   movementPageHasMore,
   MOVEMENT_PAGE_SIZE,
   nextMovementDisplayLimit,
-  shouldAutoLoadCompleteMovementHistory,
+  shouldAutoLoadMovementPage,
 } from './movementView';
 import {
   beginTallerStatusUpdate,
@@ -1314,7 +1314,7 @@ function AppShell({ user }: { user: User }) {
   const movementCursorRef = useRef<QueryDocumentSnapshot | null>(null);
   const movementPaginationStartedRef = useRef(false);
   const loadingMovementPageRef = useRef(false);
-  const autoLoadedEmptyMovementScopesRef = useRef(new Set<string>());
+  const exportingMovementReportRef = useRef(false);
   const analysisHistoryLoadAttemptedRef = useRef(false);
   const valuationHistoryLoadAttemptedRef = useRef(false);
   const savingToolStatusIds = useRef(new Set<string>());
@@ -1375,7 +1375,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   async function loadMoreMovementHistory() {
-    if (loadingMovementPageRef.current || !movementCursorRef.current || !hasMoreMovements) return;
+    if (exportingMovementReportRef.current || loadingMovementPageRef.current || !movementCursorRef.current || !hasMoreMovements) return;
     loadingMovementPageRef.current = true;
     setLoadingMoreMovements(true);
     setMovementHistoryError('');
@@ -1566,7 +1566,10 @@ function AppShell({ user }: { user: User }) {
   }, []);
 
   useEffect(() => {
-    const updateOnline = () => setOnline(navigator.onLine);
+    const updateOnline = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine) setMovementHistoryError('');
+    };
     window.addEventListener('online', updateOnline);
     window.addEventListener('offline', updateOnline);
     updateOnline();
@@ -2172,6 +2175,7 @@ function AppShell({ user }: { user: User }) {
   useEffect(() => {
     if (
       !isAnalysisModule
+      || exportando
       || analysisHistoryLoadAttemptedRef.current
       || !hasMoreMovements
       || loadingMoreMovements
@@ -2180,10 +2184,11 @@ function AppShell({ user }: { user: User }) {
     ) return;
     analysisHistoryLoadAttemptedRef.current = true;
     void loadCompleteMovementHistory().catch(() => undefined);
-  }, [firestoreSources.movements, hasMoreMovements, isAnalysisModule, loadingMoreMovements, online]);
+  }, [exportando, firestoreSources.movements, hasMoreMovements, isAnalysisModule, loadingMoreMovements, online]);
   useEffect(() => {
     if (
       !isValuationModule
+      || exportando
       || valuationHistoryLoadAttemptedRef.current
       || !hasMoreMovements
       || loadingMoreMovements
@@ -2192,7 +2197,7 @@ function AppShell({ user }: { user: User }) {
     ) return;
     valuationHistoryLoadAttemptedRef.current = true;
     void loadCompleteMovementHistory().catch(() => undefined);
-  }, [firestoreSources.movements, hasMoreMovements, isValuationModule, loadingMoreMovements, online]);
+  }, [exportando, firestoreSources.movements, hasMoreMovements, isValuationModule, loadingMoreMovements, online]);
   const usingTallerFallback = isTallerModule && tools.length === 0 && toolsInventory.length > 0;
   const moduleInventoryBase = useMemo(() => {
     const operationalInventory = inventory.filter((item) => !moduleMatches(item.modulo, 'ASEO'));
@@ -2250,37 +2255,29 @@ function AppShell({ user }: { user: User }) {
   }), [belongsToMovementScope, movements, users]);
 
   useEffect(() => {
-    const scopeKey = [
-      module,
-      isTallerModule ? tallerSubmodulo : '',
-      isAgroquimicosModule ? agroquimicosUbicacion : '',
-    ].join('|');
-    const alreadyAttempted = autoLoadedEmptyMovementScopesRef.current.has(scopeKey);
-    const shouldAutoLoad = shouldAutoLoadCompleteMovementHistory({
-      activeScopeHasMovements: scopedMovements.length > 0,
-      alreadyAttempted,
+    const shouldAutoLoad = shouldAutoLoadMovementPage({
+      isOperationalModule,
       hasMoreMovements,
       isLoading: loadingMoreMovements,
       isOnline: online,
       isServerReady: isServerSourceReady(firestoreSources.movements),
-      isValuationModule,
+      hasError: Boolean(movementHistoryError),
+      isExporting: exportando,
     });
     if (!shouldAutoLoad) return;
 
-    autoLoadedEmptyMovementScopesRef.current.add(scopeKey);
-    void loadCompleteMovementHistory().catch(() => undefined);
+    // Continuar desde el cursor actual, dejando que la página se pinte entre bloques.
+    const timer = window.setTimeout(() => { void loadMoreMovementHistory(); }, 150);
+    return () => window.clearTimeout(timer);
   }, [
-    agroquimicosUbicacion,
+    exportando,
     firestoreSources.movements,
     hasMoreMovements,
-    isAgroquimicosModule,
-    isTallerModule,
-    isValuationModule,
+    isOperationalModule,
     loadingMoreMovements,
-    module,
+    movementHistoryError,
+    movements.length,
     online,
-    scopedMovements.length,
-    tallerSubmodulo,
   ]);
 
   const buildVisibleMovementSource = useCallback((source: readonly Movement[]) => filterAndSortMovementView(source, {
@@ -2354,28 +2351,6 @@ function AppShell({ user }: { user: User }) {
     setExitVisibleLimit(movementLimit);
   }, [agroquimicosUbicacion, hasExitFilters, module, movementLimit, tallerSubmodulo]);
 
-  useEffect(() => {
-    if (
-      !hasExitFilters
-      || !exitDateFrom
-      || loadedHistoryCoversDateRange
-      || !hasMoreMovements
-      || loadingMoreMovements
-      || !online
-      || !isServerSourceReady(firestoreSources.movements)
-    ) return;
-
-    void loadMoreMovementHistory();
-  }, [
-    exitDateFrom,
-    firestoreSources.movements,
-    hasExitFilters,
-    hasMoreMovements,
-    loadedHistoryCoversDateRange,
-    loadingMoreMovements,
-    online,
-  ]);
-
   async function loadCurrentReportInventory() {
     let sourceItems: InventoryItem[];
     if (isTallerModule) {
@@ -2400,11 +2375,13 @@ function AppShell({ user }: { user: User }) {
   }
 
   async function exportarReporte() {
+    if (exportingMovementReportRef.current || loadingMovementPageRef.current) return;
     if (!online || !isServerSourceReady(firestoreSources.movements)) {
       setError('El reporte requiere conexión y la primera página de movimientos confirmada por el servidor.');
       return;
     }
 
+    exportingMovementReportRef.current = true;
     setExportando(true);
     setError('');
     try {
@@ -2453,6 +2430,7 @@ function AppShell({ user }: { user: User }) {
     } catch {
       setError((current) => current || 'No se pudo generar el reporte Excel desde el navegador.');
     } finally {
+      exportingMovementReportRef.current = false;
       setExportando(false);
     }
   }
@@ -2635,6 +2613,7 @@ function AppShell({ user }: { user: User }) {
                   type="button"
                   disabled={!canExportMovementReport
                     || exportando
+                    || loadingMoreMovements
                     || !online
                     || !isServerSourceReady(firestoreSources.movements)
                     || (!hasMoreMovements && visibleMovements.length === 0 && moduleInventoryBase.length === 0)}
@@ -2666,25 +2645,28 @@ function AppShell({ user }: { user: User }) {
         {isOperationalModule && (hasMoreMovements || loadingMoreMovements || movementHistoryError) && (
           <div className={`history-pagination ${movementHistoryError ? 'error' : ''}`}>
             <div>
-              <strong>
-                {loadingMoreMovements && hasMoreMovements && scopedMovements.length === 0
-                  ? `Buscando movimientos de ${module}`
-                  : hasMoreMovements
-                    ? 'Historial cargado parcialmente'
-                    : 'Historial actualizado'}
+              <strong role="status">
+                {movementHistoryError
+                  ? 'Carga del historial pausada'
+                  : !online
+                    ? 'Esperando conexión para completar el historial'
+                    : !isServerSourceReady(firestoreSources.movements)
+                      ? 'Esperando sincronización de Firestore'
+                      : hasMoreMovements
+                        ? 'Cargando historial automáticamente'
+                        : 'Historial actualizado'}
               </strong>
               <span>
-                {loadingMoreMovements && hasMoreMovements && scopedMovements.length === 0
-                  ? `${formatNumber(movements.length)} movimientos revisados; buscando páginas anteriores automáticamente.`
-                  : hasMoreMovements
-                  ? `${formatNumber(movements.length)} movimientos cargados. Hay páginas anteriores disponibles; el Excel las carga antes de exportar.`
-                  : `${formatNumber(movements.length)} movimientos cargados.`}
+                {`${formatNumber(movements.length)} movimientos cargados.`}
+                {hasMoreMovements && !movementHistoryError && (online
+                  ? ' Los anteriores se cargan en segundo plano; puedes seguir usando la página.'
+                  : ' La carga se reanudará al recuperar la conexión.')}
               </span>
               {movementHistoryError && <small>{movementHistoryError}</small>}
             </div>
-            {hasMoreMovements && (
+            {hasMoreMovements && movementHistoryError && (
               <button type="button" disabled={loadingMoreMovements || !online || !isServerSourceReady(firestoreSources.movements)} onClick={() => { void loadMoreMovementHistory(); }}>
-                {loadingMoreMovements ? 'Cargando...' : 'Cargar más'}
+                {loadingMoreMovements ? 'Cargando...' : 'Reintentar'}
               </button>
             )}
           </div>

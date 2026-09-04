@@ -54,6 +54,7 @@ describe('Excel del histórico mensual', () => {
   it.each(['2026-06', '2026-07', '2026-08', '2026-09'])('aplica las reglas comunes al corte y Excel de %s sin alterar el gasto', async (period) => {
     const cases = [
       { destinationLot: 'Piso 4', recipientName: 'Dennys Bastidas', expected: 'Vivero', moduleName: 'ASEO' },
+      { destinationLot: 'Personal', recipientName: ' Rafael Franco ', expected: 'Vivero', moduleName: 'ASEO' },
       { destinationLot: 'Personal', recipientName: 'Pedro Vizcaíno', expected: 'COP (Centro de Operaciones)', moduleName: 'ASEO' },
       { destinationLot: 'Piso 3', recipientName: 'Otra persona', expected: 'Sin lote de destino', moduleName: 'ASEO' },
       { destinationLot: 'Lote 02 Aplicación edáfica', recipientName: '', expected: '2', moduleName: 'Agroquímicos' },

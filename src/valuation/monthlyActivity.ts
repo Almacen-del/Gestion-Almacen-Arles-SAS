@@ -76,7 +76,7 @@ function confirmedRecipientDestination(recipientName: string | undefined) {
   // User-confirmed assignments supersede the earlier individual Personal exceptions.
   // Match complete names only; do not infer destinations for other recipients.
   const name = normalizeMovementText(recipientName ?? '').replace(/\s+/g, ' ').trim();
-  if (['dennys bastidas', 'dennis bastidas', 'denys bastidas'].includes(name)) return 'Vivero';
+  if (['dennys bastidas', 'dennis bastidas', 'denys bastidas', 'rafael franco'].includes(name)) return 'Vivero';
   if (name === 'pedro vizcaino') return 'COP (Centro de Operaciones)';
   return '';
 }

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
 import type { MonthlyActivityRow, MonthlyActivitySnapshot } from '../valuation/monthlyActivity';
+import { recoverMonthlyDestinations, summarizeMonthlyActivity } from '../valuation/monthlyActivity';
 import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation/models';
 import { generateMonthlyActivityExcel, monthlyActivityExcelFilename } from './monthlyActivityExcelExport';
 
@@ -50,6 +51,31 @@ async function workbook() {
 }
 
 describe('Excel del histórico mensual', () => {
+  it.each(['2026-06', '2026-07', '2026-08', '2026-09'])('aplica las reglas comunes al corte y Excel de %s sin alterar el gasto', async (period) => {
+    const cases = [
+      { destinationLot: 'Piso 4', recipientName: 'Dennys Bastidas', expected: 'Vivero', moduleName: 'ASEO' },
+      { destinationLot: 'Personal', recipientName: 'Pedro Vizcaíno', expected: 'COP (Centro de Operaciones)', moduleName: 'ASEO' },
+      { destinationLot: 'Piso 3', recipientName: 'Otra persona', expected: 'Sin lote de destino', moduleName: 'ASEO' },
+      { destinationLot: 'Lote 02 Aplicación edáfica', recipientName: '', expected: '2', moduleName: 'Agroquímicos' },
+      { destinationLot: 'Recorrido plantación', recipientName: '', expected: 'Plantación', moduleName: 'Combustible' },
+      { destinationLot: 'Piso 5', recipientName: '', expected: 'Personal', moduleName: 'EPP' },
+      { destinationLot: 'Supervisor', recipientName: '', expected: 'Personal', moduleName: 'Combustible' },
+    ];
+    const saved = { ...snapshot, period, rows: cases.map((item, index) => ({ ...rows[1], id: `${period}-${index}`, occurredAt: `${period}-10 08:00`, destinationLot: item.destinationLot, recipientName: item.recipientName, moduleName: item.moduleName })) };
+    const before = JSON.stringify(saved);
+    const corrected = recoverMonthlyDestinations(saved, []).snapshot;
+    expect(corrected.rows.map(row => row.destinationLot)).toEqual(cases.map(item => item.expected));
+    expect(summarizeMonthlyActivity(corrected.rows).estimatedExpense).toBe(summarizeMonthlyActivity(saved.rows).estimatedExpense);
+    expect(JSON.stringify(saved)).toBe(before);
+    expect(recoverMonthlyDestinations(corrected, []).snapshot).toBe(corrected);
+    const bytes = await generateMonthlyActivityExcel({ summary: { ...summary, period }, items, snapshot: corrected });
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(Buffer.from(bytes) as unknown as ExcelJS.Buffer);
+    const labels = book.getWorksheet('Gasto por lote')!.getColumn(1).values;
+    expect(labels).toContain('Lote Vivero');
+    expect(labels).toContain('Lote COP');
+    expect(labels.some(value => /piso/i.test(String(value)))).toBe(false);
+  });
   it('organiza todo el informe en hojas uniformes, auditables y sin columnas de stock antiguo/nuevo', async () => {
     const { result } = await workbook();
     expect(result.worksheets.map((sheet) => sheet.name)).toEqual([

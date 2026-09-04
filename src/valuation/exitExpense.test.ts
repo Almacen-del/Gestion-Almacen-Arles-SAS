@@ -172,24 +172,25 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(recoverMonthlyDestinations(saved, [source, source]).snapshot).toBe(saved);
   });
 
-  it('aplica la confirmación Personal solo a la salida específica de ASEO verificada', () => {
+  it('asocia todas las salidas de Dennys a Vivero, incluso cortes anteriores', () => {
     const confirmed = monthlyMovement('L3chGysCdni8a44RLDZr', {
       module: 'ASEO', code: 'H04-004', name: 'Bolsa de basura negra 65x100 cm', quantity: 1,
       occurredAt: '2026-08-01 06:37', observations: 'Ubicacion: Piso 4', labor: 'Salida', recipientName: 'Dennis bastidas',
     });
-    expect(destinationLotOf(confirmed)).toBe('Personal');
-    for (const override of [{ id: 'otra-salida' }, { type: 'Entrada' }, { quantity: 2 }, { occurredAt: '2026-08-02 06:37' }, { code: 'H04-003' }]) {
-      expect(destinationLotOf({ ...confirmed, ...override })).toBe('Sin lote de destino');
+    expect(destinationLotOf(confirmed)).toBe('Vivero');
+    expect(destinationLotOf({ ...confirmed, type: 'Entrada' })).toBe('Sin lote de destino');
+    for (const override of [{ id: 'otra-salida' }, { recipientName: 'Dennys Bastidas' }, { quantity: 2 }, { occurredAt: '2026-08-02 06:37' }, { code: 'H04-003' }]) {
+      expect(destinationLotOf({ ...confirmed, ...override })).toBe('Vivero');
     }
     const current = buildMonthlyActivity('2026-08', [], [confirmed], monthlyCutoff);
     const saved = { ...current, rows: [{ ...current.rows[0], destinationLot: 'Piso 4' }] };
     const corrected = recoverMonthlyDestinations(saved, []);
-    expect(corrected.personalCount).toBe(1);
-    expect(corrected.snapshot.rows[0]).toEqual({ ...saved.rows[0], destinationLot: 'Personal' });
+    expect(corrected.recoveredCount).toBe(1);
+    expect(corrected.snapshot.rows[0]).toEqual({ ...saved.rows[0], destinationLot: 'Vivero' });
     expect(saved.rows[0].destinationLot).toBe('Piso 4');
   });
 
-  it('asigna Personal al cargo Supervisor y a las tres salidas ASEO confirmadas de Pedro Vizcaíno', () => {
+  it('conserva Personal para Supervisor y actualiza las salidas de Pedro Vizcaíno a COP', () => {
     for (const field of ['position', 'labor', 'front', 'observations', 'zone', 'recipientName'] as const) {
       expect(destinationLotOf(placeMovement(`supervisor-${field}`, { [field]: 'Supervisor de campo' }))).toBe('Personal');
     }
@@ -201,14 +202,14 @@ describe('actividad y desglose del gasto mensual', () => {
         module: 'ASEO', code, quantity: 1, occurredAt: '2026-08-10 07:13',
         recipientName: 'Pedro Vizcaíno', observations: 'Ubicación: Piso 3', labor: 'Salida',
       });
-      expect(destinationLotOf(exit)).toBe('Personal');
+      expect(destinationLotOf(exit)).toBe('COP (Centro de Operaciones)');
       const saved = buildMonthlyActivity('2026-08', [], [exit], monthlyCutoff);
       const old = { ...saved, rows: saved.rows.map(row => ({ ...row, destinationLot: 'Sin lote de destino' })) };
-      expect(recoverMonthlyDestinations(old, []).snapshot.rows[0].destinationLot).toBe('Personal');
+      expect(recoverMonthlyDestinations(old, []).snapshot.rows[0].destinationLot).toBe('COP (Centro de Operaciones)');
     }
     expect(destinationLotOf(monthlyMovement('otro-pedro', {
       module: 'ASEO', code: 'H03-001', quantity: 1, occurredAt: '2026-08-11 07:13', recipientName: 'Pedro Vizcaíno',
-    }))).toBe('Sin lote de destino');
+    }))).toBe('COP (Centro de Operaciones)');
   });
 
   it('asigna Personal a todas las salidas de Consumibles, Dotación y EPP sin modificar el destinatario', () => {
@@ -233,17 +234,41 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(recoverMonthlyDestinations(entry, []).snapshot).toBe(entry);
   });
 
-  it('no usa el piso de almacenamiento de ASEO como destino ni lo deduce por destinatario', () => {
+  it('no usa pisos de almacenamiento y solo asocia destinatarios confirmados', () => {
     for (const floor of ['Piso 0', 'Piso 00', 'Piso 4', 'PISO 04']) {
       const source = monthlyMovement('aseo', { module: 'ASEO', observations: `Ubicación: ${floor}`, reference: floor });
       expect(destinationLotOf({ ...source, labor: 'Cocina' })).toBe('Cocina');
-      expect(destinationLotOf({ ...source, labor: 'Salida', recipientName: 'Dennis bastidas' })).toBe('Sin lote de destino');
+      expect(destinationLotOf({ ...source, labor: 'Salida', recipientName: 'Dennis bastidas' })).toBe('Vivero');
       expect(destinationLotOf({ ...source, labor: 'Salida', recipientName: 'Elena Quevedo' })).toBe('Sin lote de destino');
       expect(destinationLotOf({ ...source, destinationLot: floor, labor: 'Cocina' })).toBe('Cocina');
     }
     expect(destinationLotOf(placeMovement('etiquetas', { module: 'ASEO', observations: 'Ubicacion: Piso 4; Destino: Portería' }))).toBe('Portería');
     expect(destinationLotOf(placeMovement('destino-real', { module: 'ASEO', observations: 'Ubicacion: Piso 0', destinationLot: 'Comedor', labor: 'Cocina' }))).toBe('Comedor');
-    expect(destinationLotOf(placeMovement('otro-modulo', { module: 'Combustible', destinationLot: 'Piso 4' }))).toBe('Piso 4');
+    expect(destinationLotOf(placeMovement('otro-modulo', { module: 'Combustible', destinationLot: 'Piso 4' }))).toBe('Sin lote de destino');
+  });
+
+  it('prioriza las personas confirmadas en cualquier módulo sin alterar importes ni los cortes guardados', () => {
+    for (const module of ['ASEO', 'Combustible', 'Consumibles', 'Dotación', 'EPP', 'Agroquímicos']) {
+      for (const [recipientName, destination] of [['Dennys Bastidas', 'Vivero'], [' PEDRO VIZCAÍNO ', 'COP (Centro de Operaciones)']]) {
+        const source = monthlyMovement('persona', { module, recipientName, destinationLot: 'Piso 05', labor: 'Salida' });
+        expect(destinationLotOf(source)).toBe(destination);
+        const generated = buildMonthlyActivity('2026-08', rows, [source], monthlyCutoff);
+        const saved = { ...generated, rows: generated.rows.map(row => ({ ...row, destinationLot: 'Personal' })) };
+        const before = JSON.stringify(saved);
+        const corrected = recoverMonthlyDestinations(saved, []);
+        expect(corrected.snapshot.rows[0]).toEqual({ ...saved.rows[0], destinationLot: destination });
+        expect(JSON.stringify(saved)).toBe(before);
+        expect(recoverMonthlyDestinations(corrected.snapshot, []).snapshot).toBe(corrected.snapshot);
+      }
+    }
+    for (const floor of ['Piso', 'Piso 5', 'Lote Piso 04', 'Pisos 3 y 4', 'Piso 5 - bodega']) {
+      const source = monthlyMovement('piso', { module: 'Combustible', destinationLot: floor });
+      expect(destinationLotOf(source)).toBe('Sin lote de destino');
+      const generated = buildMonthlyActivity('2026-08', rows, [source], monthlyCutoff);
+      const saved = { ...generated, rows: generated.rows.map(row => ({ ...row, destinationLot: floor })) };
+      expect(recoverMonthlyDestinations(saved, []).snapshot.rows[0].destinationLot).toBe('Sin lote de destino');
+    }
+    expect(destinationLotOf(monthlyMovement('desconocido', { module: 'ASEO', recipientName: 'Otro Pedro Vizcaino' }))).toBe('Sin lote de destino');
   });
 
   it('corrige pisos en cortes anteriores sin reescribirlos, alterar totales ni inventar el destino faltante', () => {

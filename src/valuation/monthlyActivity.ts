@@ -72,20 +72,13 @@ function isConfirmedCopFuelWork(source: MonthlyActivitySource) {
   });
 }
 
-function isConfirmedPersonalAseoExit(id: string, moduleName: string, code: string, quantity: number, occurredAt: string) {
-  // User confirmation, 2026-08-26: this specific ASEO delivery (one H04-004,
-  // 2026-08-01) is Personal. Do not infer destinations for other people or "Salida" notes.
-  return id === 'L3chGysCdni8a44RLDZr' && normalizeMovementText(moduleName) === 'aseo'
-    && code.trim().toUpperCase() === 'H04-004' && quantity === 1
-    && movementDateKey(occurredAt) === '2026-08-01';
-}
-
-function isPedroAseoMaintenanceExit(moduleName: string, code: string, quantity: number, occurredAt: string, recipientName: string | undefined) {
-  // User-confirmed deliveries used by Pedro Vizcaíno for air-conditioning maintenance.
-  return normalizeMovementText(moduleName) === 'aseo' && quantity === 1
-    && movementDateKey(occurredAt) === '2026-08-10'
-    && normalizeMovementText(recipientName ?? '') === 'pedro vizcaino'
-    && ['H03001', 'H03007', 'H03004'].includes(code.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+function confirmedRecipientDestination(recipientName: string | undefined) {
+  // User-confirmed assignments supersede the earlier individual Personal exceptions.
+  // Match complete names only; do not infer destinations for other recipients.
+  const name = normalizeMovementText(recipientName ?? '').replace(/\s+/g, ' ').trim();
+  if (['dennys bastidas', 'dennis bastidas', 'denys bastidas'].includes(name)) return 'Vivero';
+  if (name === 'pedro vizcaino') return 'COP (Centro de Operaciones)';
+  return '';
 }
 
 function containsSupervisor(values: readonly (string | undefined)[]) {
@@ -129,10 +122,9 @@ function canonicalDestination(value: string) {
   return ({ taller: 'Taller', cocina: 'Cocina', comedor: 'Comedor' } as Record<string, string>)[key] || clean;
 }
 
-function isStorageFloorDestination(moduleName: string, value: string) {
-  // ASEO's Piso is the product's storage reference, not where it was delivered.
-  return normalizeMovementText(moduleName) === 'aseo'
-    && /^piso\s*[-:#]?\s*\d+$/.test(normalizeMovementText(cleanDestination(value)));
+function isStorageFloorDestination(value: string) {
+  // Storage floors are never expense destinations, regardless of module.
+  return /\bpisos?\b/.test(normalizeMovementText(cleanDestination(value)));
 }
 
 function namedDestination(texts: readonly (string | undefined)[]) {
@@ -158,14 +150,14 @@ function namedDestination(texts: readonly (string | undefined)[]) {
 }
 
 export function destinationLotOf(source: MonthlyActivitySource) {
+  const recipientDestination = confirmedRecipientDestination(source.recipientName);
+  if (classifyInventoryMovementType(source.type) === 'exit' && recipientDestination) return recipientDestination;
   if (classifyInventoryMovementType(source.type) === 'exit'
     && (usesPersonalDestination(source.module)
       || isPersonalAseoProduct(source.module, source.code ?? '')
-      || isConfirmedPersonalAseoExit(source.id, source.module, source.code ?? '', source.quantity, source.occurredAt)
-      || isPedroAseoMaintenanceExit(source.module, source.code ?? '', source.quantity, source.occurredAt, source.recipientName)
       || isSupervisorExit(source))) return PERSONAL_DESTINATION;
   if (isConfirmedCopFuelWork(source)) return 'COP (Centro de Operaciones)';
-  const readDestination = (value: string) => isStorageFloorDestination(source.module, value) ? '' : canonicalDestination(value);
+  const readDestination = (value: string) => isStorageFloorDestination(value) ? '' : canonicalDestination(value);
   const explicit = readDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
   const fuelRoute = normalizeMovementText(source.module) === 'combustible'
@@ -180,8 +172,8 @@ export function destinationLotOf(source: MonthlyActivitySource) {
   return value || UNKNOWN_DESTINATION_LOT;
 }
 
-// Display-only destination rules: Personal for the user-designated modules; no ASEO
-// storage floors. Preserve amounts and recover other destinations only from the same movement.
+// Display-only rules, including confirmed recipients: never use storage floors.
+// Preserve amounts and recover other destinations only from the same movement.
 export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, sources: readonly MonthlyActivitySource[]) {
   const byId = new Map<string, MonthlyActivitySource | null>();
   sources.forEach((source) => byId.set(source.id, byId.has(source.id) ? null : source));
@@ -208,24 +200,35 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
       }
     }
     if (row.kind !== 'exit') return row;
+    const recipientDestination = confirmedRecipientDestination(sameMovement ? source.recipientName || row.recipientName : row.recipientName);
+    if (recipientDestination) {
+      if (row.destinationLot === recipientDestination) return row;
+      recoveredCount += 1;
+      return { ...row, destinationLot: recipientDestination };
+    }
     if (usesPersonalDestination(row.moduleName)
       || isPersonalAseoProduct(row.moduleName, row.code)
-      || isConfirmedPersonalAseoExit(row.id, row.moduleName, row.code, row.quantity, row.occurredAt)
-      || isPedroAseoMaintenanceExit(row.moduleName, row.code, row.quantity, row.occurredAt, row.recipientName)
       || containsSupervisor([row.destinationLot, row.recipientId, row.recipientName])
       || (sameMovement && isSupervisorExit(source))) {
       if (row.destinationLot === PERSONAL_DESTINATION) return row;
       personalCount += 1;
       return { ...row, destinationLot: PERSONAL_DESTINATION };
     }
-    const storageFloor = isStorageFloorDestination(row.moduleName, row.destinationLot);
+    const storageFloor = isStorageFloorDestination(row.destinationLot);
     // Explicit user correction of the 2026-08-19 Roto speed exit. Read its current
     // destination for this view, leaving the saved cut unchanged.
     const confirmedSourceCorrection = sameMovement && (row.id === '1TP0IxcXpmaG0OmKAUT1'
       || isConfirmedCopFuelWork(source)
       || (normalizeMovementText(source.module) === 'combustible'
         && [source.destinationLot, source.observations, source.zone, source.labor, source.front].some(isRouteLabel)));
-    if (!storageFloor && !confirmedSourceCorrection && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) return row;
+    if (!storageFloor && !confirmedSourceCorrection && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) {
+      // Old cuts retain their raw labels. Apply the same canonical lot labels as
+      // newly generated months without rewriting the stored financial snapshot.
+      const destinationLot = canonicalDestination(row.destinationLot) || UNKNOWN_DESTINATION_LOT;
+      if (destinationLot === row.destinationLot) return row;
+      recoveredCount += 1;
+      return { ...row, destinationLot };
+    }
     const destinationLot = sameMovement ? destinationLotOf(source) : UNKNOWN_DESTINATION_LOT;
     if (destinationLot === UNKNOWN_DESTINATION_LOT && !storageFloor) return row;
     if (destinationLot === row.destinationLot) return row;

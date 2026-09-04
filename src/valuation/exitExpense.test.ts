@@ -309,6 +309,19 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(destinationLotOf(placeMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía' }))).toBe('Sin lote de destino');
   });
 
+  it('recupera las confirmaciones operativas de julio sin inventar destinos incompletos', () => {
+    expect(destinationLotOf(placeMovement('lot-typo', { labor: 'Sanidad Lot 35' }))).toBe('35');
+    expect(destinationLotOf(placeMovement('california', { labor: 'California' }))).toBe('California');
+    expect(destinationLotOf(placeMovement('la-california', { labor: 'La California' }))).toBe('California');
+    for (const movement of [
+      { module: 'Combustible', labor: 'Energía', machinery: 'planta Blanca' },
+      { module: 'Combustible', labor: 'Hidrolavadora', machinery: 'hidrolavadora' },
+      { module: 'ASEO', labor: 'Tractor 3 asiento' },
+    ]) expect(destinationLotOf(placeMovement('cop-operativo', movement))).toBe('COP (Centro de Operaciones)');
+    expect(destinationLotOf(placeMovement('cal-sin-lote', { labor: 'Cal' }))).toBe('Sin lote de destino');
+    expect(destinationLotOf(placeMovement('roto-sin-numero', { labor: 'Rotospeed lote' }))).toBe('Sin lote de destino');
+  });
+
   it('reconoce lugares en Labor/Frente, zona y notas y unifica las variantes de COP', () => {
     const cases = [
       ['Energía COP', 'COP (Centro de Operaciones)'], ['centro de operaciones', 'COP (Centro de Operaciones)'],
@@ -328,7 +341,7 @@ describe('actividad y desglose del gasto mensual', () => {
   });
 
   it('no convierte labores genéricas, importes, negaciones ni destinos ambiguos en lugares', () => {
-    for (const text of ['Plateo mecánico', 'Energía', '20.000 COP', 'COP 20000', 'Sin cocina', 'Transporte desde taller', 'taller y cocina', 'Taller 2', 'Taller 2 y cocina', 'copias']) {
+    for (const text of ['Plateo mecánico', '20.000 COP', 'COP 20000', 'Sin cocina', 'Transporte desde taller', 'taller y cocina', 'Taller 2', 'Taller 2 y cocina', 'copias']) {
       expect(destinationLotOf(placeMovement('no-lugar', { labor: text }))).toBe('Sin lote de destino');
     }
     expect(destinationLotOf(placeMovement('ambiguo', { labor: 'Taller', front: 'Comedor' }))).toBe('Sin lote de destino');

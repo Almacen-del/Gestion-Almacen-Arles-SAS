@@ -72,6 +72,18 @@ function isConfirmedCopFuelWork(source: MonthlyActivitySource) {
   });
 }
 
+function isConfirmedCopOperationalWork(source: MonthlyActivitySource) {
+  if (classifyInventoryMovementType(source.type) !== 'exit') return false;
+  const labor = normalizeMovementText(source.labor ?? '');
+  const machinery = normalizeMovementText(source.machinery ?? '');
+  // User-confirmed operational destinations: power generation, pressure washing,
+  // and tractor maintenance/seat work belong to the operations center.
+  if (/\b(?:no|sin|desde|origen)\b/.test(labor)) return false;
+  return /^energia$/.test(labor)
+    || /\bhidrolavadora\b/.test(`${labor} ${machinery}`)
+    || (/\btractor\b/.test(labor) && /\b(?:asiento|mantenimiento|lavado|lavar)\b/.test(labor));
+}
+
 function confirmedRecipientDestination(recipientName: string | undefined) {
   // User-confirmed assignments supersede the earlier individual Personal exceptions.
   // Match complete names only; do not infer destinations for other recipients.
@@ -111,6 +123,7 @@ function canonicalDestination(value: string) {
   if (/^(?:c\.?o\.?p\.?|centro de operaciones|cop\s*\(centro de operaciones\))$/.test(key)) return 'COP (Centro de Operaciones)';
   if (/^(?:jardin clonal|(?:lote )?ex(?:p)?erimental)$/.test(key)) return key === 'jardin clonal' ? 'Jardín clonal' : 'Experimental';
   if (/\brecorridos?\b/.test(key) || key === 'plantacion') return FUEL_ROUTE_DESTINATION;
+  if (/^(?:la\s+)?california$/.test(key)) return 'California';
   // Keep the lot identifiers, not the agricultural task or a trailing description.
   // A joint delivery stays in ONE joint group: never duplicate/split its cost.
   const codes = /^(\d+[a-z]?(?:\s*(?:,|\/|&|\by\b)\s*(?:lotes?\s+)?\d+[a-z]?)*)(?=$|[\s;:.(\-])/i.exec(clean)?.[1];
@@ -135,7 +148,7 @@ function namedDestination(texts: readonly (string | undefined)[]) {
     // A named place is not an amount in COP or a negated/origin reference.
     if (/\b(?:sin|no|desde|origen)\b/.test(normalized)
       || /(?:\d[\d.,\s]*\s*cop\b|\bcop\s*\$?\s*\d)/.test(normalized)) continue;
-    for (const match of normalized.matchAll(/\b(?:centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor|jardin clonal|ex(?:p)?erimental|vivero)\b/g)) {
+    for (const match of normalized.matchAll(/\b(?:centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor|jardin clonal|ex(?:p)?erimental|vivero|california)\b/g)) {
       const name = canonicalDestination(match[0]);
       // Preserve qualified locations; do not merge Taller 1 and Taller 2.
       const suffix = normalized.slice((match.index ?? 0) + match[0].length).trim();
@@ -157,6 +170,7 @@ export function destinationLotOf(source: MonthlyActivitySource) {
       || isPersonalAseoProduct(source.module, source.code ?? '')
       || isSupervisorExit(source))) return PERSONAL_DESTINATION;
   if (isConfirmedCopFuelWork(source)) return 'COP (Centro de Operaciones)';
+  if (isConfirmedCopOperationalWork(source)) return 'COP (Centro de Operaciones)';
   const readDestination = (value: string) => isStorageFloorDestination(value) ? '' : canonicalDestination(value);
   const explicit = readDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
@@ -165,7 +179,7 @@ export function destinationLotOf(source: MonthlyActivitySource) {
   if (fuelRoute) return FUEL_ROUTE_DESTINATION;
   // El lote de fabricación y los lotes FEFO no son destinos del consumo.
   const labelled = destinationTexts.flatMap((text) => {
-    const matches = (text ?? '').matchAll(/(?:\blotes?(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))|\b(?:destino|lugar|ubicaci[oó]n|zona)\s*[:=#]\s*)([^;|\n·]+)/gi);
+    const matches = (text ?? '').matchAll(/(?:\b(?:lotes?|lots?)(?:\s+de\s+destino)?(?:\s*[:=#]\s*|\s+(?=[\d]))|\b(?:destino|lugar|ubicaci[oó]n|zona)\s*[:=#]\s*)([^;|\n·]+)/gi);
     return [...matches].map((match) => readDestination(match[1])).filter(Boolean);
   })[0];
   const value = explicit || labelled || namedDestination(destinationTexts);
@@ -219,6 +233,7 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
     // destination for this view, leaving the saved cut unchanged.
     const confirmedSourceCorrection = sameMovement && (row.id === '1TP0IxcXpmaG0OmKAUT1'
       || isConfirmedCopFuelWork(source)
+      || isConfirmedCopOperationalWork(source)
       || (normalizeMovementText(source.module) === 'combustible'
         && [source.destinationLot, source.observations, source.zone, source.labor, source.front].some(isRouteLabel)));
     if (!storageFloor && !confirmedSourceCorrection && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) {

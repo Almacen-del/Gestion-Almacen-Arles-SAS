@@ -99,6 +99,37 @@ service cloud.firestore {
       return data.keys().hasAny(['cantidad', 'stock_actual', 'stock', 'saldo']) && validStockNumbers(data);
     }
 
+    function catalogEditableFields() {
+      return ['modulo', 'categoria', 'subcategoria', 'item', 'referencia',
+        'marca', 'nombre_completo', 'busqueda', 'codigo_interno', 'codigo_original',
+        'documento_id', 'producto_id', 'unidad', 'ubicacion', 'ultima_fecha',
+        'ultimo_solicitante', 'activo', 'cantidad', 'stock_actual', 'stock', 'saldo',
+        'origen_area_cop', 'documento_origen_area', 'origen_canonico', 'version_canonica',
+        'peso_envase', 'unidad_envase', 'referencia_catalogo'];
+    }
+
+    function catalogTextIfPresent(data, field) {
+      return !(field in data) || data[field] is string;
+    }
+
+    function validCatalogProduct(data, documentId) {
+      return data.keys().hasAll(['modulo', 'item', 'codigo_interno'])
+        && data.modulo is string && data.modulo.size() > 0
+        && data.item is string && data.item.size() > 0
+        && data.codigo_interno is string && data.codigo_interno.size() > 0
+        && catalogTextIfPresent(data, 'categoria')
+        && catalogTextIfPresent(data, 'subcategoria')
+        && catalogTextIfPresent(data, 'referencia')
+        && catalogTextIfPresent(data, 'codigo_original')
+        && catalogTextIfPresent(data, 'unidad')
+        && catalogTextIfPresent(data, 'ubicacion')
+        && (!('documento_id' in data) || data.documento_id == documentId)
+        && (!('producto_id' in data) || data.producto_id == documentId)
+        && (!('activo' in data) || data.activo is bool)
+        && validStockNumbers(data)
+        && nonNegativeIfPresent(data, 'peso_envase');
+    }
+
     function preservesExistingFields() {
       return request.resource.data.keys().hasAll(resource.data.keys());
     }
@@ -219,6 +250,20 @@ service cloud.firestore {
       allow read: if isActiveUser();
       allow create: if isActiveUser() && validStock(request.resource.data);
       allow update: if isActiveUser() && validStock(request.resource.data) && preservesExistingFields();
+      allow delete: if false;
+    }
+
+    // Catalog maintenance is distinct from an ordinary stock entry. Operators
+    // read product cards but register existing-stock movements without editing them.
+    match /catalogo_personalizado/{documentId} {
+      allow read: if isActiveUser();
+      allow create: if canManageInventory()
+        && request.resource.data.keys().hasOnly(catalogEditableFields())
+        && validCatalogProduct(request.resource.data, documentId);
+      allow update: if canManageInventory()
+        && preservesExistingFields()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(catalogEditableFields())
+        && validCatalogProduct(request.resource.data, documentId);
       allow delete: if false;
     }
 

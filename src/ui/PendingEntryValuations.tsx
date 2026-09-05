@@ -95,6 +95,7 @@ function calculationForRow({
 }
 
 export default function PendingEntryValuations({
+  canManage = false,
   online,
   user,
   currentAverages,
@@ -104,6 +105,7 @@ export default function PendingEntryValuations({
   loading,
   loadError,
 }: {
+  canManage?: boolean;
   online: boolean;
   user: User;
   currentAverages: Record<string, number>;
@@ -132,6 +134,7 @@ export default function PendingEntryValuations({
   );
 
   async function save(row: EntryRow) {
+    if (!canManage) return;
     const draft = drafts[row.id] ?? '';
     const calculation = calculationForRow({
       row,
@@ -239,14 +242,14 @@ export default function PendingEntryValuations({
                 const draft = drafts[row.id] ?? '';
                 const calculation = calculationForRow({ row, record, draft, currentAverages, currentValuationIds });
                 const blockedMessage = row.blockedByMovementId ? 'Primero valora la entrada anterior' : '';
-                const rowIssue = row.validationIssue
+                const rowIssue = (!canManage ? 'Solo un administrador o almacenista puede valorar entradas.' : '') || row.validationIssue
                   || blockedMessage
                   || (calculation.baseMissing ? 'Define primero el promedio inicial en Valor actual' : '')
                   || (calculation.inputInvalid ? 'Ingresa un valor no negativo válido' : '')
                   || rowErrors[row.id]
                   || '';
                 const disabled = Boolean(
-                  record
+                  !canManage || record
                   || row.validationIssue
                   || row.blockedByMovementId
                   || calculation.baseMissing

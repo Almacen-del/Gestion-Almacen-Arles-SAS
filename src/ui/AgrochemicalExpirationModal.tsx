@@ -49,6 +49,7 @@ function formatQuantity(value: number) {
 }
 
 export default function AgrochemicalExpirationModal({
+  canRegister = false,
   products,
   lots,
   entries,
@@ -57,6 +58,7 @@ export default function AgrochemicalExpirationModal({
   onRegister,
   onClose,
 }: {
+  canRegister?: boolean;
   products: AgrochemicalExpirationProduct[];
   lots: AgrochemicalLot[];
   entries: AgrochemicalStockEntry[];
@@ -117,6 +119,7 @@ export default function AgrochemicalExpirationModal({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!canRegister) return setFormError('Solo un administrador o almacenista puede asignar lotes.');
     setFormError('');
     setSavedMessage('');
     const parsedQuantity = Number(quantity.replace(',', '.'));
@@ -199,6 +202,7 @@ export default function AgrochemicalExpirationModal({
         </header>
 
         <div className="agro-expiration-body">
+          {!canRegister && <p role="status">Modo consulta: la asignación de lotes está reservada a administradores y almacenistas.</p>}
           <section className="agro-expiration-kpis" aria-label="Resumen de vencimientos">
             <article className="expired"><AlertTriangle size={19} /><span>Vencidos</span><strong>{statusCounts.expired}</strong></article>
             <article className="near"><CalendarClock size={19} /><span>Próximos 30 días</span><strong>{statusCounts['near-expiry']}</strong></article>
@@ -222,7 +226,7 @@ export default function AgrochemicalExpirationModal({
                     {entry.validationIssue && <small>{entry.validationIssue}</small>}
                     <button
                       type="button"
-                      disabled={entry.assignmentStatus === 'invalid'}
+                      disabled={!canRegister || entry.assignmentStatus === 'invalid'}
                       onClick={() => selectPendingEntry(entry.id)}
                     >
                       {entry.assignmentStatus === 'partial' ? 'Completar asignación' : 'Asignar lote'}
@@ -303,7 +307,7 @@ export default function AgrochemicalExpirationModal({
               <label>Fecha de ingreso
                 <input type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} />
               </label>
-              <button type="submit" disabled={saving || loading || Boolean(sourceError) || registrationLimit <= 0}>{saving ? 'Guardando...' : 'Registrar lote'}</button>
+              <button type="submit" title={!canRegister ? 'Solo un administrador o almacenista puede asignar lotes.' : ''} disabled={!canRegister || saving || loading || Boolean(sourceError) || registrationLimit <= 0}>{saving ? 'Guardando...' : 'Registrar lote'}</button>
             </form>
             {selectedEntry && <button className="agro-clear-entry" type="button" onClick={() => { setSelectedEntryId(''); setSelectedExistingLotId(''); setProductDocumentId(''); setLotNumber(''); setExpirationDate(''); setQuantity(''); }}>Cancelar selección de entrada</button>}
             {formError && <p className="agro-expiration-message error">{formError}</p>}

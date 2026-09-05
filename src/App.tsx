@@ -47,7 +47,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db, firebaseProjectId } from './firebase';
-import { verifyUserAuthorization } from './auth/authorization';
+import { verifyUserAuthorization, canManageInventoryProfile, hasActiveUserStatus } from './auth/authorization';
 import { createCorporateAccount, signInWithNormalizedEmail } from './auth/browserAuth';
 import { filterAndSortInventoryView } from './inventoryView';
 import {
@@ -271,6 +271,7 @@ type UserProfile = {
   cargo: string;
   email: string;
   rol: string;
+  role?: string;
   estado: string;
   activo: boolean;
 };
@@ -733,8 +734,9 @@ function readUserDoc(doc: QueryDocumentSnapshot): UserProfile {
     cargo: textValue(data, 'cargo', 'rol'),
     email: textValue(data, 'email'),
     rol: textValue(data, 'rol', 'role'),
+    role: textValue(data, 'role'),
     estado: textValue(data, 'estado'),
-    activo: data.activo === true,
+    activo: hasActiveUserStatus(data),
   };
 }
 
@@ -1628,6 +1630,7 @@ function AppShell({ user }: { user: User }) {
 
   const canManageUsers = user.email?.toLowerCase() === 'almacen@arlessas.com'
     || ['owner', 'admin', 'administrador'].includes((users[user.uid]?.rol || users[user.email || '']?.rol || '').toLowerCase());
+  const canManageInventory = canManageInventoryProfile(user.email, users[user.uid] ?? users[user.email || ''] ?? null);
 
   const pendingUsers = useMemo(() => {
     const uniqueProfiles = new Map<string, UserProfile>();
@@ -1646,6 +1649,7 @@ function AppShell({ user }: { user: User }) {
       nombre: name,
       cargo: jobTitle,
       rol: role,
+      role,
       activo: isActive,
       estado: isActive ? 'activo' : 'inactivo',
       ...(profile.estado === 'pendiente' ? { aprobadoEn: new Date().toISOString() } : {}),
@@ -1747,6 +1751,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   function manualValuationBlockedReason(item: InventoryItem) {
+    if (!canManageInventory) return 'Solo un administrador o almacenista puede modificar valoraciones.';
     if (!online) return 'Conéctate a Firestore para guardar cambios.';
     if (usingTallerFallback) return 'No se puede valorar Taller usando datos de respaldo.';
     const sources = [
@@ -1761,6 +1766,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   async function saveUnitValuation(item: InventoryItem): Promise<boolean> {
+    if (!canManageInventory) return false;
     if (savingValuationIds.current.has(item.valuationId)) return false;
     const rawValue = valuationDrafts[item.valuationId];
     if (rawValue === undefined) {
@@ -1816,6 +1822,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   function openValuationModal(item: InventoryItem) {
+    if (!canManageInventory) return;
     setValuationEditBaselines((current) => ({
       ...current,
       [item.valuationId]: valuationRevisions[item.valuationId] ?? emptyValuationRevision(),
@@ -1948,6 +1955,7 @@ function AppShell({ user }: { user: User }) {
   ).filter((entry) => entry.assignmentStatus !== 'assigned').length, [agrochemicalLots, agrochemicalStockEntries]);
 
   async function registerAgrochemicalLot(registration: AgrochemicalLotRegistration) {
+    if (!canManageInventory) throw new Error('Solo un administrador o almacenista puede asignar lotes.');
     if (agrochemicalLotsLoading || agrochemicalLotsError) {
       throw new Error('No se puede registrar hasta confirmar la lectura completa de los lotes existentes.');
     }
@@ -2695,6 +2703,7 @@ function AppShell({ user }: { user: User }) {
 
         {isValuationModule && (
           <InventoryValuationModule
+            canManage={canManageInventory}
             rows={valuationRows}
             moduleOptions={valuationModuleOptions}
             online={online}
@@ -3124,6 +3133,7 @@ function AppShell({ user }: { user: User }) {
       )}
       {showAgrochemicalExpirationModal && isAgroquimicosModule && (
         <AgrochemicalExpirationModal
+          canRegister={canManageInventory}
           products={agrochemicalExpirationProducts}
           lots={agrochemicalLots}
           entries={agrochemicalStockEntries}

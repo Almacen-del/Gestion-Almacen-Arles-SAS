@@ -76,6 +76,81 @@ service cloud.firestore {
             && isAdmin(userProfile()));
     }
 
+    // Stage 1: operational users do not administer financial history.
+    function canManageInventory() {
+      return hasAdminAccess() || (hasUserProfile() && isActive(userProfile())
+        && (userProfile().get('rol', '') in ['almacenista', 'Almacenista', 'ALMACENISTA']
+          || userProfile().get('role', '') in ['almacenista', 'Almacenista', 'ALMACENISTA']));
+    }
+
+    function nonNegativeIfPresent(data, field) {
+      // Infinity - Infinity is not zero; reject non-finite values without a business quantity cap.
+      return !(field in data) || (data[field] is number && data[field] >= 0 && data[field] - data[field] == 0);
+    }
+
+    function validStockNumbers(data) {
+      return nonNegativeIfPresent(data, 'cantidad')
+        && nonNegativeIfPresent(data, 'stock_actual')
+        && nonNegativeIfPresent(data, 'stock')
+        && nonNegativeIfPresent(data, 'saldo');
+    }
+
+    function validStock(data) {
+      return data.keys().hasAny(['cantidad', 'stock_actual', 'stock', 'saldo']) && validStockNumbers(data);
+    }
+
+    function preservesExistingFields() {
+      return request.resource.data.keys().hasAll(resource.data.keys());
+    }
+
+    function validToolStock(data) {
+      return data.keys().hasAny(['cantidad', 'cantidad_total', 'stock_total', 'cantidad_disponible'])
+        && validStockNumbers(data)
+        && nonNegativeIfPresent(data, 'cantidad_total')
+        && nonNegativeIfPresent(data, 'stock_total')
+        && nonNegativeIfPresent(data, 'cantidad_disponible')
+        && nonNegativeIfPresent(data, 'cantidad_ocupada');
+    }
+
+    function validNewMovement(data) {
+      // Legacy mobile tool movements can encode quantity as a decimal string.
+      return !('cantidad' in data)
+        || (data.cantidad is number && data.cantidad >= 0)
+        || (data.cantidad is string && data.cantidad.matches('^[0-9]+([.,][0-9]+)?( [^0-9-].*)?$'));
+    }
+
+    function validCloseOwner(data, period) {
+      return period.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+        && data.periodo == period
+        && data.usuario_uid == request.auth.uid
+        && data.intento_id is string && data.intento_id.size() > 0
+        && data.resumen.valor_total is number && data.resumen.valor_total >= 0
+        && data.resumen.cantidad_productos is int && data.resumen.cantidad_productos > 0;
+    }
+
+    function validCloseTransition(period) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return validCloseOwner(after, period) && before.usuario_uid == request.auth.uid
+        && ((before.estado == 'error' && after.estado == 'guardando'
+            && after.intento_id != before.intento_id)
+          || (before.estado == 'guardando' && after.intento_id == before.intento_id
+            && after.diff(before).affectedKeys().hasOnly(['estado', 'fecha', 'verificacion'])
+            && (after.estado == 'error'
+              || (after.estado == 'completo' && after.verificacion.verificado == true
+                && after.verificacion.cantidad_items == after.resumen.cantidad_productos))));
+    }
+
+    function canWriteCloseDetail(period) {
+      let closePath = /databases/$(database)/documents/cierres_valoracion_inventario/$(period);
+      let before = get(closePath).data;
+      let after = getAfter(closePath).data;
+      return canManageInventory() && before.estado == 'guardando'
+        && before.usuario_uid == request.auth.uid
+        && after.estado == 'guardando' && after.usuario_uid == request.auth.uid
+        && after.intento_id == before.intento_id;
+    }
+
     function isAgrochemicalParent(parentPath) {
       return exists(/databases/$(database)/documents/$(parentPath))
         && get(/databases/$(database)/documents/$(parentPath)).data.modulo in [
@@ -132,6 +207,7 @@ service cloud.firestore {
           && request.resource.data.email == request.auth.token.email
           && request.auth.token.email.matches('^[^@]+@arlessas[.]com$')
           && request.resource.data.rol == 'pendiente'
+          && request.resource.data.get('role', 'pendiente') == 'pendiente'
           && request.resource.data.activo == false
           && request.resource.data.estado == 'pendiente');
       allow update, delete: if hasAdminAccess();
@@ -140,50 +216,80 @@ service cloud.firestore {
     // Colecciones operativas utilizadas por el panel y por los flujos de
     // inventario. El acceso requiere autenticación + perfil activo + rol válido.
     match /existencias/{documentId} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && validStock(request.resource.data);
+      allow update: if isActiveUser() && validStock(request.resource.data) && preservesExistingFields();
+      allow delete: if false;
     }
 
     // Conserva compatibilidad con subcolecciones operativas anteriores. Los dos
     // nombres de trazabilidad agroquímica se validan en sus reglas dedicadas.
     match /existencias/{productId}/{subcollection}/{document=**} {
-      allow read, write: if isActiveUser()
+      allow read: if isActiveUser();
+      allow create, update: if canManageInventory()
         && !(subcollection in [
           'lotes_agroquimicos', 'asignaciones_entradas_agroquimicos'
         ]);
+      allow delete: if false;
     }
 
     match /movimientos/{document=**} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && validNewMovement(request.resource.data);
+      // Identical retries are harmless; edits and deletes require a separate,
+      // audited administrative correction, not an ordinary client write.
+      allow update: if isActiveUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([]);
+      allow delete: if false;
     }
 
     match /productos_aseo/{document=**} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && validStock(request.resource.data);
+      allow update: if isActiveUser() && validStock(request.resource.data) && preservesExistingFields();
+      allow delete: if false;
     }
 
     match /herramientas/{document=**} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && validToolStock(request.resource.data);
+      allow update: if isActiveUser() && validToolStock(request.resource.data) && preservesExistingFields();
+      allow delete: if false;
     }
 
     match /valoraciones_inventario/{document=**} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create, update: if canManageInventory()
+        && request.resource.data.valor_unitario is number
+        && request.resource.data.valor_unitario >= 0
+        && request.resource.data.actualizado_por_uid == request.auth.uid;
+      allow delete: if false;
     }
 
     match /valoraciones_entradas/{document=**} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if canManageInventory() && request.resource.data.usuario_uid == request.auth.uid
+        && request.resource.data.valor_unitario_entrada is number
+        && request.resource.data.valor_unitario_entrada >= 0;
+      allow update, delete: if false;
     }
 
     match /entradas_stock/{document=**} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if isActiveUser() && validNewMovement(request.resource.data);
+      allow update: if isActiveUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([]);
+      allow delete: if false;
     }
 
     // Los lotes se almacenan bajo existencias/{productoId}. El comodín recursivo
     // permite consultas collectionGroup sin abrir otras colecciones.
     match /{parentPath=**}/lotes_agroquimicos/{lotId} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser()
+      allow create: if canManageInventory()
         && isAgrochemicalParent(parentPath)
         && validAgrochemicalLot(request.resource.data);
-      allow update: if isActiveUser()
+      allow update: if canManageInventory()
         && isAgrochemicalParent(parentPath)
         && validAgrochemicalLot(request.resource.data)
         && request.resource.data.producto_id == resource.data.producto_id
@@ -194,11 +300,11 @@ service cloud.firestore {
 
     match /{parentPath=**}/asignaciones_entradas_agroquimicos/{entryId} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser()
+      allow create: if canManageInventory()
         && isAgrochemicalParent(parentPath)
         && validAgrochemicalEntryAssignment(request.resource.data)
         && request.resource.data.entrada_id == entryId;
-      allow update: if isActiveUser()
+      allow update: if canManageInventory()
         && isAgrochemicalParent(parentPath)
         && validAgrochemicalEntryAssignment(request.resource.data)
         && request.resource.data.entrada_id == entryId
@@ -208,13 +314,23 @@ service cloud.firestore {
     }
 
     match /cierres_valoracion_inventario/{periodo} {
-      allow read, write: if isActiveUser();
+      allow read: if isActiveUser();
+      allow create: if canManageInventory() && validCloseOwner(request.resource.data, periodo)
+        && request.resource.data.estado == 'guardando';
+      allow update: if canManageInventory() && validCloseTransition(periodo);
+      allow delete: if false;
 
       match /items/{itemId} {
-        allow read, write: if isActiveUser();
+        allow read: if isActiveUser();
+        allow create, update: if canWriteCloseDetail(periodo)
+          && request.resource.data.intento_id == get(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)).data.intento_id;
+        allow delete: if canWriteCloseDetail(periodo);
       }
       match /movimientos/{movementId} {
-        allow read, write: if isActiveUser();
+        allow read: if isActiveUser();
+        allow create, update: if canWriteCloseDetail(periodo)
+          && request.resource.data.intento_id == get(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)).data.intento_id;
+        allow delete: if canWriteCloseDetail(periodo);
       }
     }
 

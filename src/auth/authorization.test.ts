@@ -3,6 +3,7 @@ import {
   OWNER_EMAIL,
   hasActiveUserStatus,
   isAuthorizedUserProfile,
+  canManageInventoryProfile,
 } from './authorization';
 
 describe('autorización del panel', () => {
@@ -31,5 +32,21 @@ describe('autorización del panel', () => {
       estado: 'suspendido',
       rol: 'admin',
     })).toBe(false);
+  });
+});
+
+describe('permisos de gestión de inventario', () => {
+  it('conserva propietario y roles de gestión activos', () => {
+    expect(canManageInventoryProfile(OWNER_EMAIL, null)).toBe(true);
+    for (const rol of ['almacenista', 'Administrador', 'ADMIN', 'Owner']) {
+      expect(canManageInventoryProfile('prueba@arlessas.com', { activo: true, rol })).toBe(true);
+    }
+    expect(canManageInventoryProfile('prueba@arlessas.com', { estado: 'Activo', role: 'almacenista' })).toBe(true);
+  });
+  it('no concede gestión a operadores, perfiles pendientes ni desactivados', () => {
+    for (const profile of [null, { activo: true, rol: 'operador' }, { activo: false, rol: 'admin' },
+      { activo: true, estado: 'suspendido', rol: 'admin' }, { rol: 'almacenista' }]) {
+      expect(canManageInventoryProfile('prueba@arlessas.com', profile)).toBe(false);
+    }
   });
 });

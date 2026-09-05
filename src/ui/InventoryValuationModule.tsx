@@ -252,6 +252,7 @@ function MonthlyCloseConfirmation({
 }
 
 function CurrentValuationView({
+  canManage,
   monthlyActivitySources,
   rows,
   moduleOptions,
@@ -268,6 +269,7 @@ function CurrentValuationView({
   onOpenEntries,
   onOpenHistory,
 }: {
+  canManage: boolean;
   monthlyActivitySources: readonly MonthlyActivitySource[];
   rows: CurrentValuationRow[];
   moduleOptions: string[];
@@ -335,6 +337,7 @@ function CurrentValuationView({
   ), [period]);
 
   async function confirmMonthlyClose(earlyConfirmation: string) {
+    if (!canManage) return;
     const latestEligibility = evaluateMonthlyCloseEligibility({
       movementHistoryComplete: exitHistoryComplete,
       period,
@@ -424,7 +427,7 @@ function CurrentValuationView({
         <button
           className="tool-button valuation-close-button"
           type="button"
-          disabled={!eligibility.eligible || saveState === 'saving'}
+          disabled={!canManage || !eligibility.eligible || saveState === 'saving'}
           onClick={() => {
             setConfirmationCutoffAt(new Date());
             setConfirmationOpen(true);
@@ -591,8 +594,8 @@ function CurrentValuationView({
                       type="button"
                       className={`valuation-edit-button ${row.unitValue > 0 ? 'valued' : 'unvalued'}`}
                       onClick={() => onEdit(row.valuationId)}
-                      disabled={!online}
-                      title={online ? `Editar valor unitario de ${row.product}` : 'Conéctate para editar el valor unitario'}
+                      disabled={!canManage || !online}
+                      title={!canManage ? 'Solo un administrador o almacenista puede modificar valoraciones.' : online ? `Editar valor unitario de ${row.product}` : 'Conéctate para editar el valor unitario'}
                     >
                       <span>{formatUnitCurrency(row.unitValue)}</span>
                       <Pencil size={14} />
@@ -629,8 +632,9 @@ function CurrentValuationView({
 }
 
 function HistoricalValuationView({
-  sources, historyReady, currentRows, moduleOptions, online, user,
+  sources, historyReady, currentRows, moduleOptions, online, user, canManage,
 }: {
+  canManage: boolean;
   sources: readonly MonthlyActivitySource[];
   historyReady: boolean;
   currentRows: readonly CurrentValuationRow[];
@@ -762,6 +766,7 @@ function HistoricalValuationView({
   }
 
   async function saveReconstruction() {
+    if (!canManage) return;
     if (!selectedReconstruction || !reconstructionReferenceAt || reconstructionState === 'saving') return;
     if (selectedReconstruction.blockingIssues.length) {
       setReconstructionState('error');
@@ -833,7 +838,7 @@ function HistoricalValuationView({
           <h2>Consulta un corte mensual guardado</h2>
         </div>
         <div className="valuation-history-actions">
-          <button type="button" className="tool-button" disabled={!online || !historyReady} onClick={openReconstruction}>Reconstruir meses anteriores</button>
+          <button type="button" className="tool-button" disabled={!canManage || !online || !historyReady} onClick={openReconstruction}>Reconstruir meses anteriores</button>
           <label className="status-sort valuation-month-selector">
             <CalendarDays size={17} />
             <span>Mes:</span>
@@ -896,7 +901,7 @@ function HistoricalValuationView({
                 {reconstructionMessage && <div className={`valuation-save-progress ${reconstructionState}`} role="status"><div><span>{reconstructionMessage}</span><strong>{reconstructionState === 'saving' ? `${Math.round((reconstructionProgress.completed / Math.max(1, reconstructionProgress.total)) * 100)}%` : ''}</strong></div>{reconstructionState === 'saving' && <progress max="100" value={(reconstructionProgress.completed / Math.max(1, reconstructionProgress.total)) * 100} />}</div>}
                 <div className="valuation-modal-actions">
                   <button type="button" disabled={reconstructionState === 'saving'} onClick={() => setReconstructionOpen(false)}>Cancelar</button>
-                  <button type="button" className="tool-button" disabled={!selectedReconstruction || selectedReconstruction.blockingIssues.length > 0 || reconstructionConfirmation.trim() !== `RECONSTRUIR ${selectedReconstruction.period}` || reconstructionState === 'saving'} onClick={() => { void saveReconstruction(); }}>{reconstructionState === 'saving' ? 'Guardando...' : 'Guardar reconstrucción'}</button>
+                  <button type="button" className="tool-button" disabled={!canManage || !selectedReconstruction || selectedReconstruction.blockingIssues.length > 0 || reconstructionConfirmation.trim() !== `RECONSTRUIR ${selectedReconstruction.period}` || reconstructionState === 'saving'} onClick={() => { void saveReconstruction(); }}>{reconstructionState === 'saving' ? 'Guardando...' : 'Guardar reconstrucción'}</button>
                 </div>
               </>}
             </div>
@@ -1003,6 +1008,7 @@ function HistoricalValuationView({
 }
 
 export default function InventoryValuationModule({
+  canManage,
   monthlyActivitySources,
   rows,
   moduleOptions,
@@ -1019,6 +1025,7 @@ export default function InventoryValuationModule({
   exitHistoryLoading,
   onEdit,
 }: {
+  canManage: boolean;
   monthlyActivitySources: readonly MonthlyActivitySource[];
   rows: CurrentValuationRow[];
   moduleOptions: string[];
@@ -1053,6 +1060,7 @@ export default function InventoryValuationModule({
 
   return (
     <section className="valuation-dashboard" aria-label="Valoración del inventario">
+      {!canManage && <p role="status">Modo consulta: las valoraciones y los cierres solo pueden guardarlos un administrador o almacenista.</p>}
       <div className="valuation-tabs" role="tablist" aria-label="Vistas de valoración">
         <button type="button" role="tab" aria-selected={activeTab === 'current'} className={activeTab === 'current' ? 'active' : ''} onClick={() => setActiveTab('current')}>Valor actual</button>
         <button type="button" role="tab" aria-selected={activeTab === 'entries'} className={activeTab === 'entries' ? 'active' : ''} onClick={() => setActiveTab('entries')}>Entradas por valorar</button>
@@ -1060,6 +1068,7 @@ export default function InventoryValuationModule({
       </div>
       {activeTab === 'current' ? (
         <CurrentValuationView
+          canManage={canManage}
           monthlyActivitySources={monthlyActivitySources}
           rows={rows}
           moduleOptions={moduleOptions}
@@ -1078,6 +1087,7 @@ export default function InventoryValuationModule({
         />
       ) : activeTab === 'entries' ? (
         <PendingEntryValuations
+          canManage={canManage}
           online={online}
           user={user}
           currentAverages={currentAverages}
@@ -1088,7 +1098,7 @@ export default function InventoryValuationModule({
           loadError={entryLoadError}
         />
       ) : (
-        <HistoricalValuationView sources={monthlyActivitySources} historyReady={exitHistoryComplete} currentRows={rows} moduleOptions={moduleOptions} online={online} user={user} />
+        <HistoricalValuationView canManage={canManage} sources={monthlyActivitySources} historyReady={exitHistoryComplete} currentRows={rows} moduleOptions={moduleOptions} online={online} user={user} />
       )}
     </section>
   );

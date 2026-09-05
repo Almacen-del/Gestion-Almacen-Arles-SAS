@@ -31,6 +31,18 @@ export function hasAllowedUserRole(profile: Record<string, unknown>) {
     || ALLOWED_ROLES.has(legacyRole);
 }
 
+// UX mirror of canManageInventory in firestore.rules. The server is authoritative.
+export function canManageInventoryProfile(email: string | null, profile: Record<string, unknown> | null) {
+  if (email === OWNER_EMAIL) return true;
+  if (!profile || !hasActiveUserStatus(profile)) return false;
+  const managementRoles = new Set([
+    'owner', 'Owner', 'OWNER', 'admin', 'Admin', 'ADMIN',
+    'administrador', 'Administrador', 'ADMINISTRADOR',
+    'almacenista', 'Almacenista', 'ALMACENISTA',
+  ]);
+  return managementRoles.has(String(profile.rol ?? '')) || managementRoles.has(String(profile.role ?? ''));
+}
+
 export function isAuthorizedUserProfile(
   email: string | null,
   profile: Record<string, unknown> | null,

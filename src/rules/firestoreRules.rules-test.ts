@@ -46,7 +46,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await testEnvironment.cleanup();
+  await testEnvironment?.cleanup();
 });
 
 describe('isActiveUser en firestore.rules', () => {
@@ -116,7 +116,7 @@ describe('isActiveUser en firestore.rules', () => {
   });
 
   it('guarda, verifica y relee el gasto del corte sin modificar sus movimientos originales', async () => {
-    await seedUser('actividad-activo', { activo: true, rol: 'operador' });
+    await seedUser('actividad-activo', { activo: true, rol: 'almacenista' });
     const context = testEnvironment.authenticatedContext('actividad-activo', { email: 'actividad@example.com' });
     const firestore = context.firestore() as unknown as Firestore;
     const snapshot: MonthlyActivitySnapshot = {
@@ -129,6 +129,10 @@ describe('isActiveUser en firestore.rules', () => {
       }],
     };
     await setDoc(doc(firestore, 'movimientos', 'salida-1'), { cantidad: 2, observaciones: 'Original' });
+    await setDoc(doc(firestore, 'cierres_valoracion_inventario', '2026-08'), {
+      periodo: '2026-08', estado: 'guardando', usuario_uid: 'actividad-activo', intento_id: 'intento-1',
+      resumen: { valor_total: 200, cantidad_productos: 1 },
+    });
     await assertSucceeds(saveMonthlyActivity(snapshot, 'intento-1', firestore));
     const loaded = await loadMonthlyActivity(monthlyActivityMetadata(snapshot), firestore);
     expect(loaded.rows).toEqual(snapshot.rows);

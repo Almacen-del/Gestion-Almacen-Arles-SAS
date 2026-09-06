@@ -233,6 +233,10 @@ function crearHoja(
 }
 
 export async function generarReporteMovimientosExcelWeb(payload: ReporteMovimientosPayload): Promise<Uint8Array> {
+  if (payload.fuelDeliveryRows) {
+    const { exportFuelTemplate } = await import('./fuelTemplateExport');
+    return exportFuelTemplate(payload.fuelDeliveryRows);
+  }
   const workbook = new ExcelJS.Workbook();
   workbook.creator = payload.generatedBy;
   workbook.company = payload.companyName;

@@ -8,6 +8,7 @@ import {
 import { modules } from './theme';
 import type { AgrochemicalLot } from './agrochemicalLots';
 import { normalizarUbicacionAgroquimicos } from './agroquimicosCanonicos';
+import { createFuelDeliveryRows, type FuelDeliveryRow } from './fuelDeliveryReport';
 
 export const REPORTE_MOVIMIENTOS_FILENAME = 'Reporte_Movimientos_ARLES.xlsx';
 
@@ -41,6 +42,7 @@ export type MovimientoParaReporte = {
   cantidad: number;
   unidad: string;
   fecha: string;
+  monthlyOccurredAt?: string;
   solicitante: string;
   cargo: string;
   usuario: string;
@@ -54,6 +56,11 @@ export type MovimientoParaReporte = {
   zona?: string;
   horometro?: string;
   responsableEntrega?: string;
+  usuarioUid?: string;
+  destinationLot?: string;
+  placaSerial?: string;
+  proveedor?: string;
+  entregaEntrada?: string;
   productDocumentId?: string;
   documentId?: string;
   ubicacion?: string;
@@ -148,6 +155,7 @@ export type ResumenReporte = ResumenCategoria & {
 };
 
 export type ReporteMovimientosPayload = {
+  fuelDeliveryRows?: FuelDeliveryRow[];
   companyName: string;
   title: string;
   moduleName: string;
@@ -926,7 +934,11 @@ export function crearReporteMovimientos(opciones: {
     companyName: 'ARLES S.A.S.',
     title: 'REPORTE DE MOVIMIENTOS DE INVENTARIO',
     moduleName: opciones.moduleName,
-    suggestedFileName: nombreArchivoReporte(opciones.moduleName),
+    suggestedFileName: coincideModulo(opciones.moduleName, 'Combustible')
+      ? 'GA-F-006_Control_Combustible.xlsx' : nombreArchivoReporte(opciones.moduleName),
+    ...(coincideModulo(opciones.moduleName, 'Combustible') ? {
+      fuelDeliveryRows: createFuelDeliveryRows(opciones.movimientos, opciones.usuarios),
+    } : {}),
     periodLabel: opciones.periodLabel,
     exportDate: opciones.exportDate,
     generatedBy: opciones.generatedBy,

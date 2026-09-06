@@ -69,7 +69,7 @@ describe('Excel uniforme de los módulos', () => {
     expect(etiquetas.wb.getWorksheet('Entradas')!.getCell('G8').value).toBe('Lote: 28 · Resp.: Juan Pérez');
   });
 
-  it.each(modules.slice(2))('exporta %s con las columnas exactas y el mismo estilo en todas las hojas', async (modulo) => {
+  it.each(modules.slice(2).filter(modulo => modulo !== 'Combustible'))('exporta %s con las columnas exactas y el mismo estilo en todas las hojas', async (modulo) => {
     const { wb } = await exportar(modulo);
     const esperadas = modulo === 'Agroquimicos' ? [...columnas, 'Lote', 'Fecha de vencimiento'] : columnas;
     expect(wb.worksheets.length).toBeGreaterThanOrEqual(4);

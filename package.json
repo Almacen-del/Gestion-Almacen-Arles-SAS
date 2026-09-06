@@ -26,6 +26,7 @@
   "dependencies": {
     "exceljs": "^4.4.0",
     "firebase": "^12.16.0",
+    "jszip": "3.10.1",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

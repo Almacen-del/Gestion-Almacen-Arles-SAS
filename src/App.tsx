@@ -257,6 +257,10 @@ type Movement = {
   frente?: string;
   horometro?: string;
   responsableEntrega?: string;
+  usuarioUid?: string;
+  placaSerial?: string;
+  proveedor?: string;
+  entregaEntrada?: string;
   productDocumentId?: string;
   documentId?: string;
   stockBefore?: number;
@@ -683,6 +687,10 @@ function readMovementDoc(doc: QueryDocumentSnapshot): Movement {
     solicitante: textValue(data, 'solicitante') || textValue(data, 'responsable'),
     cargo: textValue(data, 'cargo'),
     usuario: textValue(data, 'usuario', 'registradoPor', 'usuario_uid'),
+    usuarioUid: textValue(data, 'usuario_uid', 'registrado_por_uid'),
+    placaSerial: textValue(data, 'placa_serial', 'placaSerial', 'placa', 'serial', 'numero_serie'),
+    proveedor: textValue(data, 'proveedor', 'nombre_proveedor'),
+    entregaEntrada: textValue(data, 'responsable_entrega'),
     observaciones: textValue(data, 'observaciones', 'nota'),
     fotoUrl: textValue(data, 'fotoUrl', 'foto_url', 'evidenciaUrl', 'evidencia_url', 'evidencia', 'photoUrl', 'photo_url'),
     submodulo: resolverSubmoduloDesdeCampos({
@@ -2292,6 +2300,13 @@ function AppShell({ user }: { user: User }) {
       const reportLots = isAgroquimicosModule
         ? (await getDocsFromServer(collectionGroup(db, 'lotes_agroquimicos'))).docs.filter(doc => isCanonicalAgrochemicalLotPath(doc.ref.path)).map(readAgrochemicalLotDoc)
         : [];
+      // Fuel delivery names must come from the movement's actor and fresh profiles,
+      // not from the exporting session or a not-yet-loaded user listener.
+      const reportUsers = moduleMatches(module, 'Combustible')
+        ? Object.fromEntries((await getDocsFromServer(collection(db, 'usuarios'))).docs.map(snapshot => {
+          const profile = readUserDoc(snapshot);
+          return [profile.id, profile];
+        })) : users;
       const payload = crearReporteMovimientos({
         moduleName: module,
         tallerSubmodulo: isTallerModule ? tallerSubmodulo : '',
@@ -2299,7 +2314,7 @@ function AppShell({ user }: { user: User }) {
         historialCompleto: reconciliationHistory,
         inventarioActual: inventoryAfter.map(inventoryItemForReport),
         lotesAgroquimicos: reportLots,
-        usuarios: users,
+        usuarios: reportUsers,
         periodLabel: etiquetaPeriodoReporte(exitDateFrom, exitDateTo),
         exportDate: fechaExportacionReporte(),
         generatedBy: user.email || user.displayName || 'Usuario',
@@ -2311,8 +2326,9 @@ function AppShell({ user }: { user: User }) {
         return;
       }
       if (result.canceled) return;
-    } catch {
-      setError((current) => current || 'No se pudo generar el reporte Excel desde el navegador.');
+    } catch (exportError) {
+      setError((current) => current || (exportError instanceof Error
+        ? exportError.message : 'No se pudo generar el reporte Excel desde el navegador.'));
     } finally {
       exportingMovementReportRef.current = false;
       setExportando(false);

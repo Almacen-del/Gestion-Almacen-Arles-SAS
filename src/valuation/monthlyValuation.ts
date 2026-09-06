@@ -13,7 +13,7 @@ import {
   serverTimestamp,
   startAfter,
   Timestamp,
-  writeBatch,
+  type Firestore,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from '../firebase';
@@ -31,6 +31,7 @@ import {
 import type { CurrentValuationRow, MonthlyValuationItem, MonthlyValuationSummary } from './models';
 import { buildMonthlyActivity, type MonthlyActivitySource } from './monthlyActivity';
 import { monthlyActivityMetadata, saveMonthlyActivity, type MonthlyActivityMetadata } from './monthlyActivityStorage';
+import { assertCloseAttempt, closeLastProgress, commitMonthlyCloseChunk, MONTHLY_CLOSE_PROTOCOL } from './monthlyCloseLease';
 
 const MONTHLY_CLOSES_COLLECTION = 'cierres_valoracion_inventario';
 const FIRESTORE_SAFE_BATCH_SIZE = 450;
@@ -137,6 +138,11 @@ function readMonthlySummary(period: string, data: Record<string, unknown>): Mont
     createdAt: toDate(data.fecha),
     createdBy: typeof data.usuario === 'string' ? data.usuario : '',
     createdByUid: typeof data.usuario_uid === 'string' ? data.usuario_uid : '',
+    attemptId: typeof data.intento_id === 'string' ? data.intento_id : '',
+    lastProgressAt: closeLastProgress(data),
+    recoveredByUid: (data.recuperacion as { intento_id?: unknown } | undefined)?.intento_id === data.intento_id
+      && typeof (data.recuperacion as { por_uid?: unknown } | undefined)?.por_uid === 'string'
+      ? (data.recuperacion as { por_uid: string }).por_uid : '',
     status,
   };
 }
@@ -236,13 +242,13 @@ function createAttemptId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-async function clearMonthlyCloseItems(period: string) {
-  const itemsRef = collection(db, MONTHLY_CLOSES_COLLECTION, period, 'items');
+async function clearMonthlyCloseItems(period: string, attemptId: string, firestore: Firestore) {
+  const itemsRef = collection(firestore, MONTHLY_CLOSES_COLLECTION, period, 'items');
   const snapshot = await getDocsFromServer(itemsRef);
   for (const documents of chunkArray(snapshot.docs)) {
-    const batch = writeBatch(db);
-    documents.forEach((snapshotDoc) => batch.delete(snapshotDoc.ref));
-    await batch.commit();
+    await commitMonthlyCloseChunk(period, attemptId, (transaction) => {
+      documents.forEach((snapshotDoc) => transaction.delete(snapshotDoc.ref));
+    }, firestore);
   }
 }
 
@@ -250,9 +256,10 @@ async function markMonthlyCloseError(
   period: string,
   userUid: string,
   attemptId: string,
+  firestore: Firestore,
 ) {
-  const closeRef = doc(db, MONTHLY_CLOSES_COLLECTION, period);
-  await runTransaction(db, async (transaction) => {
+  const closeRef = doc(firestore, MONTHLY_CLOSES_COLLECTION, period);
+  await runTransaction(firestore, async (transaction) => {
     const snapshot = await transaction.get(closeRef);
     if (
       snapshot.exists()
@@ -260,7 +267,7 @@ async function markMonthlyCloseError(
       && snapshot.data().usuario_uid === userUid
       && snapshot.data().intento_id === attemptId
     ) {
-      transaction.update(closeRef, { estado: 'error' });
+      transaction.update(closeRef, { estado: 'error', pulso: serverTimestamp() });
     }
   });
 }
@@ -275,6 +282,7 @@ export async function saveMonthlyValuationClose({
   historyComplete,
   onProgress,
   reconstruction,
+  firestore = db,
 }: {
   period: string;
   rows: CurrentValuationRow[];
@@ -284,6 +292,7 @@ export async function saveMonthlyValuationClose({
   movements: readonly MonthlyActivitySource[];
   historyComplete: boolean;
   onProgress: (completedSteps: number, totalSteps: number) => void;
+  firestore?: Firestore;
   reconstruction?: {
     cutoffAt: Date;
     valuedAt: Date;
@@ -311,7 +320,7 @@ export async function saveMonthlyValuationClose({
   const summary = summarizeCurrentValuation(rows, moduleOptions);
   const chunks = chunkArray(rows);
   const totalSteps = chunks.length + 5;
-  const closeRef = doc(db, MONTHLY_CLOSES_COLLECTION, period);
+  const closeRef = doc(firestore, MONTHLY_CLOSES_COLLECTION, period);
   const userLabel = user.email || user.displayName || user.uid;
   const attemptId = createAttemptId();
   const summaryPayload = {
@@ -325,13 +334,15 @@ export async function saveMonthlyValuationClose({
   let claimed = false;
   let completed = false;
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(firestore, async (transaction) => {
     const existing = await transaction.get(closeRef);
     if (existing.exists()) {
       const status = existing.data().estado;
       if (status === 'completo') throw new DuplicateMonthlyCloseError(period);
       if (status === 'guardando') throw new MonthlyCloseInProgressError(period);
-      if (status !== 'error' || existing.data().usuario_uid !== user.uid) {
+      const recoveredByUser = existing.data().recuperacion?.por_uid === user.uid
+        && existing.data().recuperacion?.intento_id === existing.data().intento_id;
+      if (status !== 'error' || (existing.data().usuario_uid !== user.uid && !recoveredByUser)) {
         throw new MonthlyCloseRetryNotAllowedError(period);
       }
     }
@@ -353,6 +364,9 @@ export async function saveMonthlyValuationClose({
       usuario_uid: user.uid,
       estado: 'guardando',
       intento_id: attemptId,
+      protocolo_cierre: MONTHLY_CLOSE_PROTOCOL,
+      pulso: serverTimestamp(),
+      ...(existing.data()?.recuperacion ? { recuperacion: existing.data()!.recuperacion } : {}),
       verificacion: {
         cantidad_items: 0,
         suma_total: 0,
@@ -362,35 +376,34 @@ export async function saveMonthlyValuationClose({
     });
   });
   claimed = true;
-  onProgress(1, totalSteps);
-
   try {
-    await clearMonthlyCloseItems(period);
+    onProgress(1, totalSteps);
+    await clearMonthlyCloseItems(period, attemptId, firestore);
     onProgress(2, totalSteps);
 
     for (let index = 0; index < chunks.length; index += 1) {
-      const batch = writeBatch(db);
-      chunks[index].forEach((row) => {
-        const itemRef = doc(db, MONTHLY_CLOSES_COLLECTION, period, 'items', row.valuationId);
-        batch.set(itemRef, {
-          item_id: row.valuationId,
-          intento_id: attemptId,
-          modulo: row.moduleName,
-          codigo: row.code,
-          referencia: row.reference || 'N/A',
-          producto: row.product,
-          cantidad: row.quantity,
-          unidad: row.unit,
-          valor_unitario: row.unitValue,
-          valor_total: row.totalValue,
+      await commitMonthlyCloseChunk(period, attemptId, (batch) => {
+        chunks[index].forEach((row) => {
+          const itemRef = doc(firestore, MONTHLY_CLOSES_COLLECTION, period, 'items', row.valuationId);
+          batch.set(itemRef, {
+            item_id: row.valuationId,
+            intento_id: attemptId,
+            modulo: row.moduleName,
+            codigo: row.code,
+            referencia: row.reference || 'N/A',
+            producto: row.product,
+            cantidad: row.quantity,
+            unidad: row.unit,
+            valor_unitario: row.unitValue,
+            valor_total: row.totalValue,
+          });
         });
-      });
-      await batch.commit();
+      }, firestore);
       onProgress(index + 3, totalSteps);
     }
 
     const storedSnapshot = await getDocsFromServer(
-      collection(db, MONTHLY_CLOSES_COLLECTION, period, 'items'),
+      collection(firestore, MONTHLY_CLOSES_COLLECTION, period, 'items'),
     );
     const allItemsFromAttempt = storedSnapshot.docs.every(
       (snapshotDoc) => snapshotDoc.data().intento_id === attemptId,
@@ -405,10 +418,10 @@ export async function saveMonthlyValuationClose({
     if (!allItemsFromAttempt || !verification.valid) throw new MonthlyCloseVerificationError();
     onProgress(chunks.length + 3, totalSteps);
 
-    await saveMonthlyActivity(activity, attemptId);
+    await saveMonthlyActivity(activity, attemptId, firestore);
     onProgress(chunks.length + 4, totalSteps);
 
-    await runTransaction(db, async (transaction) => {
+    await runTransaction(firestore, async (transaction) => {
       const current = await transaction.get(closeRef);
       if (
         !current.exists()
@@ -418,8 +431,10 @@ export async function saveMonthlyValuationClose({
       ) {
         throw new MonthlyCloseInProgressError(period);
       }
+      assertCloseAttempt(current.data(), attemptId);
       transaction.update(closeRef, {
         estado: 'completo',
+        pulso: serverTimestamp(),
         fecha: serverTimestamp(),
         verificacion: {
           cantidad_items: verification.actual.itemCount,
@@ -447,7 +462,7 @@ export async function saveMonthlyValuationClose({
   } catch (error) {
     if (claimed && !completed) {
       try {
-        await markMonthlyCloseError(period, user.uid, attemptId);
+        await markMonthlyCloseError(period, user.uid, attemptId, firestore);
       } catch (statusError) {
         console.error('No se pudo marcar el corte mensual como fallido:', statusError);
       }

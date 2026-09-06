@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { formatDestinationLot, groupMonthlyExpenses, isPersonnelExpense, summarizeMonthlyActivity, type MonthlyActivityRow, type MonthlyActivitySnapshot } from '../valuation/monthlyActivity';
+import { formatDestinationLot, groupMonthlyExpenses, isPersonnelExpense, summarizeMonthlyActivity, type MonthlyDestinationCorrection, type MonthlyActivityRow, type MonthlyActivitySnapshot } from '../valuation/monthlyActivity';
 import type { MonthlyValuationItem, MonthlyValuationSummary } from '../valuation/models';
 
 const HEADER_ROW = 7;
@@ -17,6 +17,7 @@ export type MonthlyActivityExcelPayload = {
   items: readonly MonthlyValuationItem[];
   snapshot: MonthlyActivitySnapshot;
   generatedBy?: string;
+  destinationCorrections?: readonly MonthlyDestinationCorrection[];
 };
 
 function fill(argb: string): ExcelJS.Fill {
@@ -159,9 +160,8 @@ function movementRows(sheet: ExcelJS.Worksheet, rows: readonly MonthlyActivityRo
       excelDate(row.occurredAt), row.kind === 'entry' ? 'Entrada' : 'Salida', row.code, row.product,
       row.reference === 'N/A' ? '' : row.reference, row.moduleName, row.quantity, row.unit,
       formatDestinationLot(row.destinationLot), row.recipientName, machinery, row.unitValue,
-      row.priceUnit, factor, row.kind === 'exit' && row.expense !== null ? {
-        formula: `G${excelRow}*L${excelRow}*N${excelRow}`, result: row.expense,
-      } : null, status, productKey, personKey,
+      // Keep frozen amounts even when Excel recalculates summary formulas.
+      row.priceUnit, factor, row.kind === 'exit' ? row.expense : null, status, productKey, personKey,
     ];
   });
   styleDataRows(sheet, rows.length, columns.length);
@@ -184,11 +184,11 @@ function movementRows(sheet: ExcelJS.Worksheet, rows: readonly MonthlyActivityRo
 function inventoryRows(sheet: ExcelJS.Worksheet, items: readonly MonthlyValuationItem[], period: string, subtitle: string) {
   const columns = ['Módulo', 'Código', 'Producto', 'Referencia', 'Cantidad', 'Unidad', 'Valor unitario', 'Valor total'];
   configureSheet(sheet, [20, 15, 38, 26, 16, 15, 18, 20], 'Inventario valorado del corte', subtitle, period,
-    'Cantidad y valor unitario corresponden al corte guardado. El total se conserva como fórmula auditable.', columns);
+    'Cantidades, precios y totales se conservan exactamente como fueron guardados en el corte.', columns);
   items.forEach((item, index) => {
     const rowNumber = FIRST_DATA_ROW + index;
     sheet.getRow(rowNumber).values = [item.moduleName, item.code, item.product, item.reference === 'N/A' ? '' : item.reference,
-      item.quantity, item.unit, item.unitValue, { formula: `E${rowNumber}*G${rowNumber}`, result: item.totalValue }];
+      item.quantity, item.unit, item.unitValue, item.totalValue];
   });
   styleDataRows(sheet, items.length, columns.length);
   const end = Math.max(FIRST_DATA_ROW, FIRST_DATA_ROW + items.length - 1);
@@ -426,6 +426,17 @@ export async function generateMonthlyActivityExcel(payload: MonthlyActivityExcel
   const productGroups = groupedExpenseSheet(workbook.addWorksheet('Gasto por producto'), payload.snapshot.rows, payload.summary.period, 'product');
   const personGroups = personnelExpenseSheet(workbook.addWorksheet('Dotación EPP por persona'), payload.snapshot.rows, payload.summary.period);
   chartsSheet(workbook, payload, moduleGroups, lotGroups, productGroups, personGroups);
+  if (payload.destinationCorrections?.length) {
+    const sheet = workbook.addWorksheet('Ajustes de destino');
+    configureSheet(sheet, [32, 30, 30, 72], 'Trazabilidad de destinos', subtitle, payload.summary.period,
+      'Cambios de clasificación solo para esta consulta. No se reescribió el corte ni se recalcularon sus importes.',
+      ['Movimiento', 'Destino guardado', 'Destino mostrado', 'Criterio']);
+    payload.destinationCorrections.forEach((change, index) => {
+      sheet.getRow(FIRST_DATA_ROW + index).values = [change.movementId, change.before, change.after, change.basis];
+    });
+    styleDataRows(sheet, payload.destinationCorrections.length, 4);
+    finishTable(sheet, payload.destinationCorrections.length, 4);
+  }
   return new Uint8Array(await workbook.xlsx.writeBuffer());
 }
 

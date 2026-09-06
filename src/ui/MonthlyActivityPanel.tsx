@@ -91,7 +91,7 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
     setExporting(true);
     setExportError('');
     try {
-      const bytes = await generateMonthlyActivityExcel({ summary, items, snapshot, generatedBy: summary.createdBy });
+      const bytes = await generateMonthlyActivityExcel({ summary, items, snapshot, generatedBy: summary.createdBy, destinationCorrections: recovered?.corrections });
       downloadExcelFile(bytes, monthlyActivityExcelFilename(summary.period));
     } catch (cause) {
       console.error('No se pudo exportar el histórico mensual:', cause);
@@ -110,6 +110,12 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
       </button>
     </div>
     {exportError && <div className="alert-line">{exportError}</div>}
+    {summary.activity && !historyReady && <p role="status">El corte está cargado; falta confirmar el historial para comprobar los destinos corregidos. La exportación seguirá deshabilitada hasta entonces.</p>}
+    {!!recovered?.corrections.length && <details className="monthly-activity-note">
+      <summary>Ver {recovered.corrections.length} ajustes de destino de esta consulta</summary>
+      <ul>{recovered.corrections.map((change) => <li key={change.movementId}>{change.movementId}: {change.before || 'Sin destino'} → {change.after}</li>)}</ul>
+      <p>Este detalle también se incluye en la hoja «Ajustes de destino» del Excel.</p>
+    </details>}
     {Boolean(recovered && (recovered.personalCount || recovered.discardedStorageCount || recovered.recoveredCount || recovered.machineryCount)) && <p className="monthly-activity-note">Destinos y maquinaria completados para esta consulta. El corte guardado, sus cantidades y sus valores no se modificaron.</p>}
     <p className="monthly-activity-note"><strong>{summary.reconstruction ? 'Cierre reconstruido con precios actuales.' : summary.activity ? 'Detalle guardado en el corte.' : 'Reconstruido desde el historial actual.'}</strong> Hasta {new Date(snapshot.cutoffAt).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}. Gasto estimado con {summary.reconstruction ? `los precios actuales de ${summary.reconstruction.sourcePeriod}` : 'los precios unitarios guardados en ese corte'}; no es costo histórico por salida. Taller excluido.</p>
     {view === 'movements' ? <div className="monthly-activity-kpis">

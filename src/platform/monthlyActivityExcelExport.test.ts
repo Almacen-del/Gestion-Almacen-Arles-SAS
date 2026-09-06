@@ -51,6 +51,26 @@ async function workbook() {
 }
 
 describe('Excel del histórico mensual', () => {
+  it('exports current destinations with traceability while keeping exact frozen amounts, including nulls', async () => {
+    const stored = { ...snapshot, rows: [
+      { ...rows[1], destinationLot: '4', expense: 123.456789 },
+      { ...rows[1], id: 'unpriced', destinationLot: '4', expense: null, issue: 'Unidad incompatible' as const },
+    ] };
+    const sources = stored.rows.map(row => ({ id: row.id, module: row.moduleName, type: 'Salida', code: row.code, name: row.product,
+      reference: row.reference, quantity: row.quantity, unit: row.unit, occurredAt: row.occurredAt, destinationLot: '24' }));
+    const result = recoverMonthlyDestinations(stored, sources);
+    const bytes = await generateMonthlyActivityExcel({ summary, items: [{ ...items[0], totalValue: 987.123456 }], snapshot: result.snapshot, destinationCorrections: result.corrections });
+    const book = new ExcelJS.Workbook(); await book.xlsx.load(Buffer.from(bytes) as unknown as ExcelJS.Buffer);
+    expect(book.getWorksheet('Movimientos')!.getCell('I8').value).toBe('Lote 24');
+    expect(book.getWorksheet('Movimientos')!.getCell('O8').value).toBe(123.456789);
+    expect(book.getWorksheet('Movimientos')!.getCell('O9').value).toBeNull();
+    expect(book.getWorksheet('Movimientos')!.getCell('P9').value).toBe('Unidad incompatible');
+    expect(book.getWorksheet('Inventario del corte')!.getCell('H8').value).toBe(987.123456);
+    expect(book.getWorksheet('Gasto por lote')!.getCell('E8').value).toMatchObject({ result: 123.456789 });
+    expect(book.getWorksheet('Ajustes de destino')!.getCell('B8').value).toBe('4');
+    expect(book.getWorksheet('Ajustes de destino')!.getCell('C8').value).toBe('24');
+    expect(stored.rows[0].destinationLot).toBe('4');
+  });
   it.each(['2026-06', '2026-07', '2026-08', '2026-09'])('aplica las reglas comunes al corte y Excel de %s sin alterar el gasto', async (period) => {
     const cases = [
       { destinationLot: 'Piso 4', recipientName: 'Dennys Bastidas', expected: 'Vivero', moduleName: 'ASEO' },
@@ -97,7 +117,7 @@ describe('Excel del histórico mensual', () => {
     expect(movements.getCell('K9').value).toBe('Moto 32H y 21G');
     expect(movements.getCell('N10').value).toBe(1);
     expect(movements.getCell('K11').value).toBe('No aplica');
-    expect(movements.getCell('O9').value).toEqual({ formula: 'G9*L9*N9', result: 119_000 });
+    expect(movements.getCell('O9').value).toBe(119_000);
     expect(movements.getCell('L9').numFmt).toContain('######');
     expect(movements.getCell('G9').numFmt).toContain('######');
     expect(movements.getCell('P11').value).toBe('Sin precio');

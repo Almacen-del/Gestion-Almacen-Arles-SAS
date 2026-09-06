@@ -1,4 +1,5 @@
-import { collection, doc, getDocsFromServer, writeBatch, type Firestore } from 'firebase/firestore';
+import { collection, doc, getDocsFromServer, type Firestore } from 'firebase/firestore';
+import { commitMonthlyCloseChunk } from './monthlyCloseLease';
 import { db } from '../firebase';
 import { summarizeMonthlyActivity, type MonthlyActivityRow, type MonthlyActivitySnapshot } from './monthlyActivity';
 
@@ -54,21 +55,21 @@ export async function loadMonthlyActivity(metadata: MonthlyActivityMetadata, fir
   return { ...metadata, rows };
 }
 
-// Solo se llama después de reclamar un corte nuevo o un reintento propio en estado error.
+// Only after claiming a new close or an authorized failed/recovered attempt.
 export async function saveMonthlyActivity(snapshot: MonthlyActivitySnapshot, attemptId: string, firestore = db) {
   const source = activityCollection(snapshot.period, firestore);
   const existing = await getDocsFromServer(source);
   for (let offset = 0; offset < existing.docs.length; offset += 450) {
-    const batch = writeBatch(firestore);
-    existing.docs.slice(offset, offset + 450).forEach((record) => batch.delete(record.ref));
-    await batch.commit();
+    await commitMonthlyCloseChunk(snapshot.period, attemptId, (transaction) => {
+      existing.docs.slice(offset, offset + 450).forEach((record) => transaction.delete(record.ref));
+    }, firestore);
   }
   for (let offset = 0; offset < snapshot.rows.length; offset += 450) {
-    const batch = writeBatch(firestore);
-    snapshot.rows.slice(offset, offset + 450).forEach((row) => {
-      batch.set(doc(source, row.id), { intento_id: attemptId, detalle: row });
-    });
-    await batch.commit();
+    await commitMonthlyCloseChunk(snapshot.period, attemptId, (transaction) => {
+      snapshot.rows.slice(offset, offset + 450).forEach((row) => {
+        transaction.set(doc(source, row.id), { intento_id: attemptId, detalle: row });
+      });
+    }, firestore);
   }
   const stored = await getDocsFromServer(source);
   const expected = new Map(snapshot.rows.map((row) => [row.id, canonical(row)]));

@@ -188,6 +188,8 @@ export function destinationLotOf(source: MonthlyActivitySource) {
 
 // Display-only rules, including confirmed recipients: never use storage floors.
 // Preserve amounts and recover other destinations only from the same movement.
+export type MonthlyDestinationCorrection = { movementId: string; before: string; after: string; basis: string };
+
 export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, sources: readonly MonthlyActivitySource[]) {
   const byId = new Map<string, MonthlyActivitySource | null>();
   sources.forEach((source) => byId.set(source.id, byId.has(source.id) ? null : source));
@@ -195,29 +197,36 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
   let discardedStorageCount = 0;
   let personalCount = 0;
   let machineryCount = 0;
-  let unitCompatibilityCount = 0;
+  const corrections: MonthlyDestinationCorrection[] = [];
+  const correctionBasis = new Map<string, string>();
   const rows = snapshot.rows.map((originalRow) => {
     let row = originalRow;
     const source = byId.get(row.id);
     const sameMovement = source && normalizeMovementText(source.module) === normalizeMovementText(row.moduleName)
       && classifyInventoryMovementType(source.type) === row.kind && source.quantity === row.quantity
-      && movementTime(source.occurredAt) === movementTime(row.occurredAt);
+      && movementTime(source.occurredAt) === movementTime(row.occurredAt)
+      && (!source.code || !row.code || normalizeMovementText(source.code) === normalizeMovementText(row.code))
+      && (!source.productDocumentId || !row.productId || row.productId.endsWith(`__${encodeURIComponent(source.productDocumentId)}`))
+      && (!source.unit || unitKey(source.unit) === unitKey(row.unit));
     if (!row.machinery?.trim() && sameMovement && source.machinery?.trim()) {
       row = { ...row, machinery: source.machinery.trim() };
       machineryCount += 1;
     }
-    if (row.kind === 'exit' && row.issue === 'Unidad incompatible' && row.unitValue !== null) {
-      const pricedQuantity = quantityAtPriceUnit(row.quantity, row.unit, row.priceUnit);
-      if (pricedQuantity !== null) {
-        row = { ...row, expense: pricedQuantity * row.unitValue, issue: '' };
-        unitCompatibilityCount += 1;
-      }
-    }
+    // Classifying destinations must NEVER reprice a frozen financial snapshot.
     if (row.kind !== 'exit') return row;
+    const currentDestination = sameMovement ? destinationLotOf(source) : UNKNOWN_DESTINATION_LOT;
+    if (currentDestination !== UNKNOWN_DESTINATION_LOT) {
+      if (row.destinationLot === currentDestination) return row;
+      if (isStorageFloorDestination(row.destinationLot)) discardedStorageCount += 1;
+      recoveredCount += 1;
+      correctionBasis.set(row.id, 'Destino del movimiento actual con identidad, cantidad, fecha, código y unidad compatibles; reglas de destino confirmadas.');
+      return { ...row, destinationLot: currentDestination };
+    }
     const recipientDestination = confirmedRecipientDestination(sameMovement ? source.recipientName || row.recipientName : row.recipientName);
     if (recipientDestination) {
       if (row.destinationLot === recipientDestination) return row;
       recoveredCount += 1;
+      correctionBasis.set(row.id, 'Asignación confirmada del destinatario a su área.');
       return { ...row, destinationLot: recipientDestination };
     }
     if (usesPersonalDestination(row.moduleName)
@@ -226,34 +235,36 @@ export function recoverMonthlyDestinations(snapshot: MonthlyActivitySnapshot, so
       || (sameMovement && isSupervisorExit(source))) {
       if (row.destinationLot === PERSONAL_DESTINATION) return row;
       personalCount += 1;
+      correctionBasis.set(row.id, 'Regla confirmada de destino Personal para este módulo, producto o supervisor.');
       return { ...row, destinationLot: PERSONAL_DESTINATION };
     }
     const storageFloor = isStorageFloorDestination(row.destinationLot);
-    // Explicit user correction of the 2026-08-19 Roto speed exit. Read its current
-    // destination for this view, leaving the saved cut unchanged.
-    const confirmedSourceCorrection = sameMovement && (row.id === '1TP0IxcXpmaG0OmKAUT1'
-      || isConfirmedCopFuelWork(source)
-      || isConfirmedCopOperationalWork(source)
-      || (normalizeMovementText(source.module) === 'combustible'
-        && [source.destinationLot, source.observations, source.zone, source.labor, source.front].some(isRouteLabel)));
-    if (!storageFloor && !confirmedSourceCorrection && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) {
+    if (!storageFloor && row.destinationLot && row.destinationLot !== UNKNOWN_DESTINATION_LOT) {
       // Old cuts retain their raw labels. Apply the same canonical lot labels as
       // newly generated months without rewriting the stored financial snapshot.
       const destinationLot = canonicalDestination(row.destinationLot) || UNKNOWN_DESTINATION_LOT;
       if (destinationLot === row.destinationLot) return row;
       recoveredCount += 1;
+      correctionBasis.set(row.id, 'Normalización del destino que ya figura en el corte.');
       return { ...row, destinationLot };
     }
     const destinationLot = sameMovement ? destinationLotOf(source) : UNKNOWN_DESTINATION_LOT;
     if (destinationLot === UNKNOWN_DESTINATION_LOT && !storageFloor) return row;
     if (destinationLot === row.destinationLot) return row;
     if (storageFloor) discardedStorageCount += 1;
+    if (storageFloor) correctionBasis.set(row.id, 'Se excluye Piso: es ubicación de almacenamiento, no lote de destino.');
     if (destinationLot !== UNKNOWN_DESTINATION_LOT) recoveredCount += 1;
     return { ...row, destinationLot };
   });
+  rows.forEach((row, index) => {
+    if (row.destinationLot !== snapshot.rows[index].destinationLot) corrections.push({
+      movementId: row.id, before: snapshot.rows[index].destinationLot, after: row.destinationLot,
+      basis: `${correctionBasis.get(row.id) ?? 'Destino del movimiento actual.'} Importes del corte conservados.`,
+    });
+  });
   return {
-    snapshot: recoveredCount || discardedStorageCount || personalCount || machineryCount || unitCompatibilityCount ? { ...snapshot, rows } : snapshot,
-    recoveredCount, discardedStorageCount, personalCount, machineryCount, unitCompatibilityCount,
+    snapshot: recoveredCount || discardedStorageCount || personalCount || machineryCount ? { ...snapshot, rows } : snapshot,
+    recoveredCount, discardedStorageCount, personalCount, machineryCount, corrections,
   };
 }
 

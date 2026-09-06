@@ -359,7 +359,7 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(summarizeMonthlyActivity(recovered.snapshot.rows).estimatedExpense).toBe(summarizeMonthlyActivity(original.rows).estimatedExpense);
   });
 
-  it('recupera el destino de cortes antiguos sin alterar importes, destinos conocidos ni originales', () => {
+  it('actualiza destinos de cortes antiguos desde el mismo movimiento sin alterar importes ni originales', () => {
     const fuelRows = [{ ...rows[0], moduleName: 'Combustible' }];
     const source = monthlyMovement('ruta', { module: 'Combustible' });
     const snapshot = buildMonthlyActivity('2026-08', fuelRows, [source], monthlyCutoff);
@@ -370,7 +370,7 @@ describe('actividad y desglose del gasto mensual', () => {
     expect(JSON.stringify(snapshot)).toBe(before);
     expect(result.snapshot.rows[0]).toEqual({ ...snapshot.rows[0], destinationLot: FUEL_ROUTE_DESTINATION });
     expect(groupMonthlyExpenses(result.snapshot.rows, 'lot')[0]).toMatchObject({ label: 'Lote Plantación', expense: snapshot.rows[0].expense });
-    expect(recoverMonthlyDestinations(result.snapshot, [{ ...source, labor: 'Lote 25' }]).recoveredCount).toBe(0);
+    expect(recoverMonthlyDestinations(result.snapshot, [{ ...source, labor: 'Lote 25' }]).snapshot.rows[0].destinationLot).toBe('25');
     expect(recoverMonthlyDestinations(snapshot, []).recoveredCount).toBe(0);
     expect(recoverMonthlyDestinations(snapshot, [{ ...source, labor: 'Recorridos', quantity: 500 }]).recoveredCount).toBe(0);
     expect(recoverMonthlyDestinations(snapshot, [{ ...source, labor: 'Recorridos' }, { ...source, labor: 'Lote 20' }]).recoveredCount).toBe(0);
@@ -426,7 +426,7 @@ describe('actividad y desglose del gasto mensual', () => {
 
     const saved = { ...snapshot, rows: snapshot.rows.map((row) => row.id === 'guante' ? { ...row, expense: null, issue: 'Unidad incompatible' as const } : row) };
     expect(recoverMonthlyDestinations(saved, []).snapshot.rows.find((row) => row.id === 'guante'))
-      .toMatchObject({ expense: 74_550, issue: '' });
+      .toMatchObject({ expense: null, issue: 'Unidad incompatible' });
   });
 
   it('trata una talla numérica de Dotación como unidad física', () => {

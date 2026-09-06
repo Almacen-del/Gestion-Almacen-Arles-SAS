@@ -32,6 +32,7 @@ export type MonthlyCloseEligibilityInput = {
   inconsistentEntryCount: number;
   existingCloseStatus: CloseDocumentStatus;
   existingCloseCreatorUid: string;
+  existingCloseRecoveredByUid?: string;
   userUid: string;
 };
 
@@ -99,6 +100,7 @@ export function evaluateMonthlyCloseEligibility({
   inconsistentEntryCount,
   existingCloseStatus,
   existingCloseCreatorUid,
+  existingCloseRecoveredByUid,
   userUid,
 }: MonthlyCloseEligibilityInput): MonthlyCloseEligibility {
   const reasons: string[] = [];
@@ -157,6 +159,7 @@ export function evaluateMonthlyCloseEligibility({
     existingCloseStatus === 'error'
     && existingCloseCreatorUid
     && existingCloseCreatorUid !== userUid
+    && existingCloseRecoveredByUid !== userUid
   ) {
     reasons.push('Solo el creador puede reintentar el cierre fallido de este mes.');
   }

@@ -4,6 +4,7 @@ import {assertFails,assertSucceeds,initializeTestEnvironment,type RulesTestEnvir
 import {doc,setDoc,updateDoc,deleteDoc,getDoc,runTransaction,writeBatch,serverTimestamp,type Firestore} from 'firebase/firestore';
 import {saveMonthlyActivity,loadMonthlyActivity,monthlyActivityMetadata} from '../valuation/monthlyActivityStorage';
 import type {MonthlyActivitySnapshot} from '../valuation/monthlyActivity';
+import {commitMonthlyCloseChunk} from '../valuation/monthlyCloseLease';
 
 let env:RulesTestEnvironment;
 beforeAll(async()=>{env=await initializeTestEnvironment({projectId:'demo-arles-security-stage1',firestore:{rules:readFileSync(new URL('../../firestore.rules',import.meta.url),'utf8')}});});
@@ -20,7 +21,7 @@ beforeEach(async()=>{
 });
 afterAll(async()=>{await env?.cleanup();});
 const dbFor=(uid='operator')=>env.authenticatedContext(uid,{email:uid==='owner'?'almacen@arlessas.com':uid+'@arlessas.com'}).firestore() as unknown as Firestore;
-const closePayload=(uid='warehouse',state='guardando',attempt='a1')=>({periodo:'2026-09',estado:state,usuario_uid:uid,intento_id:attempt,resumen:{valor_total:100,cantidad_productos:1},verificacion:{cantidad_items:0,verificado:false}});
+const closePayload=(uid='warehouse',state='guardando',attempt='a1')=>({periodo:'2026-09',estado:state,usuario_uid:uid,intento_id:attempt,protocolo_cierre:2,pulso:serverTimestamp(),resumen:{valor_total:100,cantidad_productos:1},verificacion:{cantidad_items:0,verificado:false}});
 async function seedClose(state='completo'){
  await env.withSecurityRulesDisabled(async ctx=>{
   await setDoc(doc(ctx.firestore(),'cierres_valoracion_inventario/2026-09'),closePayload('warehouse',state));
@@ -118,8 +119,9 @@ describe('Stage 1: financial roles and completed-close immutability',()=>{
   await assertFails(setDoc(doc(dbFor('admin'),'cierres_valoracion_inventario/2026-09/items/p1'),{intento_id:'a1'}));
   await assertFails(setDoc(doc(db,'cierres_valoracion_inventario/2026-09/items/p1'),{intento_id:'other-attempt'}));
   const batch=writeBatch(db);for(let i=0;i<25;i++)batch.set(doc(db,`cierres_valoracion_inventario/2026-09/items/p${i}`),{intento_id:'a1',valor_total:4});
+  batch.update(ref,{pulso:serverTimestamp()});
   await assertSucceeds(batch.commit());
-  await assertSucceeds(deleteDoc(doc(db,'cierres_valoracion_inventario/2026-09/items/p24')));
+  await assertSucceeds(commitMonthlyCloseChunk('2026-09','a1',tx=>tx.delete(doc(db,'cierres_valoracion_inventario/2026-09/items/p24')),db));
  });
  it('cannot create already-complete, unowned or invalid-period closes',async()=>{
   const db=dbFor('warehouse');
@@ -131,15 +133,15 @@ describe('Stage 1: financial roles and completed-close immutability',()=>{
   const db=dbFor('warehouse'),ref=doc(db,'cierres_valoracion_inventario/2026-09');await assertSucceeds(setDoc(ref,closePayload()));
   await assertFails(updateDoc(ref,{estado:'completo'}));
   await assertFails(updateDoc(ref,{estado:'completo',resumen:{valor_total:0,cantidad_productos:1},verificacion:{verificado:true,cantidad_items:1}}));
-  await assertSucceeds(updateDoc(ref,{estado:'completo',fecha:serverTimestamp(),verificacion:{verificado:true,cantidad_items:1}}));
+  await assertSucceeds(updateDoc(ref,{estado:'completo',fecha:serverTimestamp(),pulso:serverTimestamp(),verificacion:{verificado:true,cantidad_items:1}}));
   await assertFails(setDoc(doc(db,'cierres_valoracion_inventario/2026-09/items/p1'),{intento_id:'a1'}));
  });
  it('can retry a failed close only as its original creator with a new attempt',async()=>{
   await seedClose('guardando');const db=dbFor('warehouse'),ref=doc(db,'cierres_valoracion_inventario/2026-09');
-  await assertSucceeds(updateDoc(ref,{estado:'error'}));
+  await assertSucceeds(updateDoc(ref,{estado:'error',pulso:serverTimestamp()}));
   await assertFails(setDoc(doc(dbFor('admin'),'cierres_valoracion_inventario/2026-09'),closePayload('admin','guardando','a2')));
   await assertFails(setDoc(ref,closePayload()));await assertSucceeds(setDoc(ref,closePayload('warehouse','guardando','a2')));
-  await assertSucceeds(deleteDoc(doc(db,'cierres_valoracion_inventario/2026-09/items/p1')));
+  await assertSucceeds(commitMonthlyCloseChunk('2026-09','a2',tx=>tx.delete(doc(db,'cierres_valoracion_inventario/2026-09/items/p1')),db));
  });
  it('denies rewriting detail in the same batch that completes a close',async()=>{
   await seedClose('guardando');const db=dbFor('warehouse'),batch=writeBatch(db);

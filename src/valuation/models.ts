@@ -48,6 +48,9 @@ export type MonthlyValuationSummary = {
   createdAt: Date | null;
   createdBy: string;
   createdByUid: string;
+  attemptId?: string;
+  lastProgressAt?: Date | null;
+  recoveredByUid?: string;
   status: 'guardando' | 'completo' | 'error';
 };
 

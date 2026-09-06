@@ -1,4 +1,5 @@
 import ColumnFilterTable from './ColumnFilterTable';
+import MonthlyCloseRecoveryPanel from './MonthlyCloseRecoveryPanel';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { User } from 'firebase/auth';
 import {
@@ -315,6 +316,7 @@ function CurrentValuationView({
     inconsistentEntryCount,
     existingCloseStatus: existingClose?.status ?? null,
     existingCloseCreatorUid: existingClose?.createdByUid ?? '',
+    existingCloseRecoveredByUid: existingClose?.recoveredByUid,
     userUid: user.uid,
   });
   const blockerText = eligibility.reasons.join(' ').toLocaleLowerCase('es-CO');
@@ -350,6 +352,7 @@ function CurrentValuationView({
       inconsistentEntryCount,
       existingCloseStatus: existingClose?.status ?? null,
       existingCloseCreatorUid: existingClose?.createdByUid ?? '',
+      existingCloseRecoveredByUid: existingClose?.recoveredByUid,
       userUid: user.uid,
     });
     if (!latestEligibility.eligible) {
@@ -1061,6 +1064,7 @@ export default function InventoryValuationModule({
   return (
     <section className="valuation-dashboard" aria-label="Valoración del inventario">
       {!canManage && <p role="status">Modo consulta: las valoraciones y los cierres solo pueden guardarlos un administrador o almacenista.</p>}
+      {canManage && <MonthlyCloseRecoveryPanel userUid={user.uid} online={online} />}
       <div className="valuation-tabs" role="tablist" aria-label="Vistas de valoración">
         <button type="button" role="tab" aria-selected={activeTab === 'current'} className={activeTab === 'current' ? 'active' : ''} onClick={() => setActiveTab('current')}>Valor actual</button>
         <button type="button" role="tab" aria-selected={activeTab === 'entries'} className={activeTab === 'entries' ? 'active' : ''} onClick={() => setActiveTab('entries')}>Entradas por valorar</button>

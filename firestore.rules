@@ -162,14 +162,45 @@ service cloud.firestore {
     function validCloseTransition(period) {
       let before = resource.data;
       let after = request.resource.data;
-      return validCloseOwner(after, period) && before.usuario_uid == request.auth.uid
+      return validCloseOwner(after, period) && validClosePulse(after)
+        && after.get('recuperacion', null) == before.get('recuperacion', null)
         && ((before.estado == 'error' && after.estado == 'guardando'
+            && (before.usuario_uid == request.auth.uid
+              || (before.get('recuperacion', {}).get('por_uid', '') == request.auth.uid
+                && before.get('recuperacion', {}).get('intento_id', '') == before.intento_id))
             && after.intento_id != before.intento_id)
-          || (before.estado == 'guardando' && after.intento_id == before.intento_id
-            && after.diff(before).affectedKeys().hasOnly(['estado', 'fecha', 'verificacion'])
-            && (after.estado == 'error'
-              || (after.estado == 'completo' && after.verificacion.verificado == true
-                && after.verificacion.cantidad_items == after.resumen.cantidad_productos))));
+          || (before.estado == 'guardando' && before.usuario_uid == request.auth.uid
+            && closeLeaseActive(before) && after.intento_id == before.intento_id
+            && ((after.estado == 'guardando' && after.diff(before).affectedKeys().hasOnly(['pulso']))
+              || (after.diff(before).affectedKeys().hasOnly(['estado', 'fecha', 'verificacion', 'pulso'])
+                && (after.estado == 'error'
+                  || (after.estado == 'completo' && after.fecha == request.time && after.verificacion.verificado == true
+                    && after.verificacion.cantidad_items == after.resumen.cantidad_productos))))));
+    }
+
+    function validClosePulse(data) {
+      return data.protocolo_cierre == 2 && data.pulso == request.time;
+    }
+
+    function closeLeaseActive(data) {
+      return data.protocolo_cierre == 2 && data.pulso is timestamp
+        && data.pulso <= request.time && request.time < data.pulso + duration.value(15, 'm');
+    }
+
+    function closeLastPulse(data) {
+      return data.get('protocolo_cierre', 1) == 2 ? data.get('pulso', null) : data.get('fecha', null);
+    }
+
+    function validCloseRecovery(before, after) {
+      let lastPulse = closeLastPulse(before);
+      let recovery = after.recuperacion;
+      return before.estado == 'guardando' && after.estado == 'error'
+        && lastPulse is timestamp && request.time >= lastPulse + duration.value(15, 'm')
+        && after.diff(before).affectedKeys().hasOnly(['estado', 'recuperacion'])
+        && recovery.keys().hasOnly(['intento_id', 'por_uid', 'fecha', 'usuario_original', 'ultimo_pulso'])
+        && recovery.intento_id == before.intento_id && recovery.por_uid == request.auth.uid
+        && recovery.fecha == request.time && recovery.usuario_original == before.usuario_uid
+        && recovery.ultimo_pulso == lastPulse;
     }
 
     function canWriteCloseDetail(period) {
@@ -177,6 +208,7 @@ service cloud.firestore {
       let before = get(closePath).data;
       let after = getAfter(closePath).data;
       return canManageInventory() && before.estado == 'guardando'
+        && closeLeaseActive(before) && validClosePulse(after)
         && before.usuario_uid == request.auth.uid
         && after.estado == 'guardando' && after.usuario_uid == request.auth.uid
         && after.intento_id == before.intento_id;
@@ -354,9 +386,22 @@ service cloud.firestore {
     match /cierres_valoracion_inventario/{periodo} {
       allow read: if isActiveUser();
       allow create: if canManageInventory() && validCloseOwner(request.resource.data, periodo)
-        && request.resource.data.estado == 'guardando';
-      allow update: if canManageInventory() && validCloseTransition(periodo);
+        && request.resource.data.estado == 'guardando' && validClosePulse(request.resource.data)
+        && !('recuperacion' in request.resource.data);
+      allow update: if canManageInventory() && (validCloseTransition(periodo)
+        || (validCloseRecovery(resource.data, request.resource.data)
+          && getAfter(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)/recuperaciones/$(resource.data.intento_id)).data == request.resource.data.recuperacion));
       allow delete: if false;
+
+      match /recuperaciones/{attemptId} {
+        allow read: if isActiveUser();
+        allow create: if canManageInventory()
+          && attemptId == get(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)).data.intento_id
+          && validCloseRecovery(get(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)).data,
+            getAfter(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)).data)
+          && request.resource.data == getAfter(/databases/$(database)/documents/cierres_valoracion_inventario/$(periodo)).data.recuperacion;
+        allow update, delete: if false;
+      }
 
       match /items/{itemId} {
         allow read: if isActiveUser();

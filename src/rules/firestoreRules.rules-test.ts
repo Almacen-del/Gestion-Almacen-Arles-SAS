@@ -5,7 +5,8 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, collectionGroup, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, Timestamp, type Firestore } from 'firebase/firestore';
+import { collection, collectionGroup, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, serverTimestamp, Timestamp, type Firestore } from 'firebase/firestore';
+import {commitMonthlyCloseChunk} from '../valuation/monthlyCloseLease';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadMonthlyActivity, monthlyActivityMetadata, saveMonthlyActivity } from '../valuation/monthlyActivityStorage';
 import type { MonthlyActivitySnapshot } from '../valuation/monthlyActivity';
@@ -131,6 +132,7 @@ describe('isActiveUser en firestore.rules', () => {
     await setDoc(doc(firestore, 'movimientos', 'salida-1'), { cantidad: 2, observaciones: 'Original' });
     await setDoc(doc(firestore, 'cierres_valoracion_inventario', '2026-08'), {
       periodo: '2026-08', estado: 'guardando', usuario_uid: 'actividad-activo', intento_id: 'intento-1',
+      protocolo_cierre: 2, pulso: serverTimestamp(),
       resumen: { valor_total: 200, cantidad_productos: 1 },
     });
     await assertSucceeds(saveMonthlyActivity(snapshot, 'intento-1', firestore));
@@ -139,9 +141,9 @@ describe('isActiveUser en firestore.rules', () => {
     expect((await getDoc(doc(firestore, 'movimientos', 'salida-1'))).data()).toEqual({ cantidad: 2, observaciones: 'Original' });
     const anonymous = testEnvironment.unauthenticatedContext().firestore();
     await assertFails(getDocs(collection(anonymous, 'cierres_valoracion_inventario', '2026-08', 'movimientos')));
-    await setDoc(doc(firestore, 'cierres_valoracion_inventario', '2026-08', 'movimientos', 'salida-1'), {
+    await commitMonthlyCloseChunk('2026-08', 'intento-1', tx => tx.set(doc(firestore, 'cierres_valoracion_inventario', '2026-08', 'movimientos', 'salida-1'), {
       intento_id: 'intento-1', detalle: { ...snapshot.rows[0], expense: 201 },
-    });
+    }), firestore);
     await expect(loadMonthlyActivity(monthlyActivityMetadata(snapshot), firestore)).rejects.toThrow('no coincide');
   });
 

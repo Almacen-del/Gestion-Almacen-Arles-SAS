@@ -1,5 +1,9 @@
 import ColumnFilterTable from './ColumnFilterTable';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  clearLotAttempt, isDefinitiveLotRejection, prepareLotAttempt, readLotAttempt,
+  type AgrochemicalLotRegistration, type LotRegistrationIntent,
+} from '../agrochemicalRegistration';
 import { AlertTriangle, CalendarClock, PackageCheck, X } from 'lucide-react';
 import {
   buildAgrochemicalEntryQueue,
@@ -20,15 +24,7 @@ export type AgrochemicalExpirationProduct = {
   location: string;
 };
 
-export type AgrochemicalLotRegistration = {
-  productDocumentId: string;
-  lotNumber: string;
-  expirationDate: string;
-  quantity: number;
-  receivedAt: string;
-  sourceEntryId?: string;
-  linkExistingLotWithoutStockIncrease?: boolean;
-};
+export type { AgrochemicalLotRegistration } from '../agrochemicalRegistration';
 
 const STATUS_LABELS: Record<AgrochemicalLotStatus, string> = {
   expired: 'Vencido / revisar',
@@ -50,6 +46,7 @@ function formatQuantity(value: number) {
 
 export default function AgrochemicalExpirationModal({
   canRegister = false,
+  registrationScope,
   products,
   lots,
   entries,
@@ -59,6 +56,7 @@ export default function AgrochemicalExpirationModal({
   onClose,
 }: {
   canRegister?: boolean;
+  registrationScope: string;
   products: AgrochemicalExpirationProduct[];
   lots: AgrochemicalLot[];
   entries: AgrochemicalStockEntry[];
@@ -79,6 +77,19 @@ export default function AgrochemicalExpirationModal({
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
+  const [entryMode, setEntryMode] = useState<'' | 'add' | 'link'>('');
+  const [pendingAttempt, setPendingAttempt] = useState<AgrochemicalLotRegistration | null>(null);
+  const [storageError, setStorageError] = useState('');
+  const submitting = useRef(false);
+  useEffect(() => {
+    const refresh = () => {
+      try { setPendingAttempt(readLotAttempt(localStorage, registrationScope)); setStorageError(''); }
+      catch { setStorageError('No se pudo leer el comprobante local. No registres otra asignación hasta revisar este navegador.'); }
+    };
+    refresh();
+    window.addEventListener('storage', refresh);
+    return () => window.removeEventListener('storage', refresh);
+  }, [registrationScope]);
 
   const productById = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
@@ -104,7 +115,7 @@ export default function AgrochemicalExpirationModal({
   const unassignedQuantity = selectedProduct
     ? Math.max(0, selectedProduct.stock - (lotQuantityByProduct.get(selectedProduct.id) ?? 0))
     : 0;
-  const linkingExistingLotWithoutStockIncrease = Boolean(selectedEntry && selectedExistingLot);
+  const linkingExistingLotWithoutStockIncrease = Boolean(selectedEntry && selectedExistingLot && entryMode === 'link');
   const registrationLimit = selectedEntry
     ? selectedEntry.pendingQuantity
     : unassignedQuantity;
@@ -119,6 +130,7 @@ export default function AgrochemicalExpirationModal({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (submitting.current || saving) return;
     if (!canRegister) return setFormError('Solo un administrador o almacenista puede asignar lotes.');
     setFormError('');
     setSavedMessage('');
@@ -134,29 +146,55 @@ export default function AgrochemicalExpirationModal({
     if (selectedEntry && parsedQuantity > selectedEntry.pendingQuantity + 1e-7) {
       return setFormError(`La entrada solo tiene ${formatQuantity(selectedEntry.pendingQuantity)} ${selectedEntry.unit} pendientes.`);
     }
+    if (selectedEntry && selectedExistingLot && !entryMode) {
+      return setFormError('Indica si esta entrada es nueva o si su cantidad ya estaba contabilizada en el lote.');
+    }
+    await sendAttempt({
+      productDocumentId: selectedProduct.id,
+      existingLotId: selectedExistingLot?.id,
+      lotNumber: lotNumber.trim(), expirationDate, quantity: parsedQuantity, receivedAt,
+      sourceEntryId: selectedEntry?.id,
+      linkExistingLotWithoutStockIncrease: linkingExistingLotWithoutStockIncrease,
+    });
+  }
+
+  async function sendAttempt(intent?: LotRegistrationIntent) {
+    if (submitting.current || !canRegister || storageError) return;
+    submitting.current = true;
     setSaving(true);
+    setFormError('');
+    setSavedMessage('');
     try {
-      await onRegister({
-        productDocumentId: selectedProduct.id,
-        lotNumber: lotNumber.trim(),
-        expirationDate,
-        quantity: parsedQuantity,
-        receivedAt,
-        sourceEntryId: selectedEntry?.id,
-        linkExistingLotWithoutStockIncrease: linkingExistingLotWithoutStockIncrease,
+      if (!navigator.locks) throw new Error('Este navegador no permite proteger el reintento. Usa una versión actual de Chrome o Edge.');
+      await navigator.locks.request(`arles-lot:${registrationScope}`, async () => {
+        const attempt = intent ? prepareLotAttempt(localStorage, registrationScope, intent)
+          : readLotAttempt(localStorage, registrationScope);
+        if (!attempt) return;
+        setPendingAttempt(attempt);
+        try {
+          await onRegister(attempt);
+        } catch (error) {
+          // A rejection of a *replay* does not prove the original request failed
+          // (e.g. the role could have been revoked after the original commit).
+          if (intent && isDefinitiveLotRejection(error)) {
+            clearLotAttempt(localStorage, registrationScope, attempt.operationId);
+            setPendingAttempt(null);
+          }
+          throw error;
+        }
+        clearLotAttempt(localStorage, registrationScope, attempt.operationId);
+        setPendingAttempt(null);
+        setSavedMessage(attempt.linkExistingLotWithoutStockIncrease
+          ? `Entrada vinculada al lote ${attempt.lotNumber} sin aumentar su saldo.`
+          : `Lote ${attempt.lotNumber} registrado sin modificar el saldo general.`);
+        setLotNumber(''); setExpirationDate(''); setQuantity('');
+        setSelectedEntryId(''); setSelectedExistingLotId(''); setEntryMode('');
       });
-      setSavedMessage(linkingExistingLotWithoutStockIncrease
-        ? `Entrada vinculada al lote ${lotNumber.trim()} sin aumentar su saldo.`
-        : `Lote ${lotNumber.trim()} registrado sin modificar el saldo general.`);
-      setLotNumber('');
-      setExpirationDate('');
-      setQuantity('');
-      setSelectedEntryId('');
-      setSelectedExistingLotId('');
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'No se pudo registrar el lote.');
     } finally {
       setSaving(false);
+      submitting.current = false;
     }
   }
 
@@ -164,6 +202,7 @@ export default function AgrochemicalExpirationModal({
     const entry = entryQueue.find((candidate) => candidate.id === entryId);
     if (!entry || entry.assignmentStatus === 'invalid' || entry.assignmentStatus === 'assigned') return;
     setSelectedEntryId(entry.id);
+    setEntryMode('');
     setSelectedExistingLotId('');
     setProductDocumentId(entry.productDocumentId);
     setQuantity(String(entry.pendingQuantity));
@@ -173,6 +212,7 @@ export default function AgrochemicalExpirationModal({
   }
 
   function selectExistingLot(lotId: string) {
+    setEntryMode('');
     setSelectedExistingLotId(lotId);
     const existingLot = existingLotsForSelectedProduct.find((lot) => lot.id === lotId);
     if (!existingLot) return;
@@ -226,7 +266,7 @@ export default function AgrochemicalExpirationModal({
                     {entry.validationIssue && <small>{entry.validationIssue}</small>}
                     <button
                       type="button"
-                      disabled={!canRegister || entry.assignmentStatus === 'invalid'}
+                      disabled={!canRegister || saving || Boolean(pendingAttempt) || Boolean(storageError) || entry.assignmentStatus === 'invalid'}
                       onClick={() => selectPendingEntry(entry.id)}
                     >
                       {entry.assignmentStatus === 'partial' ? 'Completar asignación' : 'Asignar lote'}
@@ -243,7 +283,16 @@ export default function AgrochemicalExpirationModal({
               <h3>Asignar vencimiento a un lote</h3>
               <small>Primero debe existir el producto y su saldo, registrado desde la aplicación móvil.</small>
             </div>
+            {pendingAttempt && <div role="status" className="agro-expiration-message">
+              <p>Hay una asignación por confirmar: {pendingAttempt.lotNumber} · {formatQuantity(pendingAttempt.quantity)}.
+                El reintento consulta el mismo comprobante y no duplica la cantidad.</p>
+              <button type="button" disabled={!canRegister || saving || Boolean(storageError)} onClick={() => void sendAttempt()}>
+                {saving ? 'Comprobando...' : 'Comprobar / reintentar asignación pendiente'}
+              </button>
+            </div>}
+            {storageError && <p role="alert">{storageError}</p>}
             <form onSubmit={submit}>
+              <fieldset disabled={!canRegister || saving || Boolean(pendingAttempt) || Boolean(storageError)} style={{ display: 'contents' }}>
               <label>Producto
                 <select
                   value={productDocumentId}
@@ -274,9 +323,17 @@ export default function AgrochemicalExpirationModal({
                       </option>
                     ))}
                   </select>
-                  <small>Solo muestra lotes del producto seleccionado; elige uno para sumar esta entrada al mismo lote.</small>
+                  <small>Se conserva la identidad y el vencimiento del lote seleccionado.</small>
                 </label>
               )}
+              {selectedEntry && selectedExistingLot && <label>Tratamiento de esta entrada
+                <select value={entryMode} onChange={event => setEntryMode(event.target.value as '' | 'add' | 'link')}>
+                  <option value="">Selecciona cómo contabilizarla</option>
+                  <option value="add">Entrada nueva: sumar cantidad al lote</option>
+                  <option value="link">Cantidad ya incluida: vincular sin sumar</option>
+                </select>
+                <small>Ambas opciones usan la cantidad original de la entrada. Ninguna modifica el saldo general.</small>
+              </label>}
               <label>Número de lote
                 <input value={lotNumber} onChange={(event) => { setSelectedExistingLotId(''); setLotNumber(event.target.value); }} placeholder="Ej. L-2026-08" />
               </label>
@@ -308,6 +365,7 @@ export default function AgrochemicalExpirationModal({
                 <input type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} />
               </label>
               <button type="submit" title={!canRegister ? 'Solo un administrador o almacenista puede asignar lotes.' : ''} disabled={!canRegister || saving || loading || Boolean(sourceError) || registrationLimit <= 0}>{saving ? 'Guardando...' : 'Registrar lote'}</button>
+              </fieldset>
             </form>
             {selectedEntry && <button className="agro-clear-entry" type="button" onClick={() => { setSelectedEntryId(''); setSelectedExistingLotId(''); setProductDocumentId(''); setLotNumber(''); setExpirationDate(''); setQuantity(''); }}>Cancelar selección de entrada</button>}
             {formError && <p className="agro-expiration-message error">{formError}</p>}

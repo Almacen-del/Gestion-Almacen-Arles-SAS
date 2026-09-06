@@ -46,7 +46,9 @@ import {
   startAfter,
   updateDoc,
 } from 'firebase/firestore';
-import { auth, db, firebaseProjectId } from './firebase';
+import { auth, db, firebaseApp, firebaseProjectId } from './firebase';
+import { registerAgrochemicalLotOnServer } from './registerAgrochemicalLot';
+import { isCanonicalAgrochemicalLotPath } from './agrochemicalRegistration';
 import { verifyUserAuthorization, canManageInventoryProfile, hasActiveUserStatus } from './auth/authorization';
 import { createCorporateAccount, signInWithNormalizedEmail } from './auth/browserAuth';
 import { filterAndSortInventoryView } from './inventoryView';
@@ -129,7 +131,6 @@ import {
 } from './reporteMovimientosExcel';
 import { browserPlatform, exportMovementReportWeb } from './platform/browserPlatform';
 import {
-  agrochemicalLotDocumentId,
   buildAgrochemicalEntryQueue,
   earliestAvailableLotExpirationByProduct,
   type AgrochemicalLot,
@@ -1556,7 +1557,7 @@ function AppShell({ user }: { user: User }) {
     return onSnapshot(
       collectionGroup(db, 'lotes_agroquimicos'),
       (snapshot) => {
-        setAgrochemicalLots(snapshot.docs.map(readAgrochemicalLotDoc));
+        setAgrochemicalLots(snapshot.docs.filter(doc => isCanonicalAgrochemicalLotPath(doc.ref.path)).map(readAgrochemicalLotDoc));
         setAgrochemicalLotsLoading(false);
       },
       () => {
@@ -1956,132 +1957,7 @@ function AppShell({ user }: { user: User }) {
 
   async function registerAgrochemicalLot(registration: AgrochemicalLotRegistration) {
     if (!canManageInventory) throw new Error('Solo un administrador o almacenista puede asignar lotes.');
-    if (agrochemicalLotsLoading || agrochemicalLotsError) {
-      throw new Error('No se puede registrar hasta confirmar la lectura completa de los lotes existentes.');
-    }
-    const product = agroquimicosInventoryBase.find((item) => item.id === registration.productDocumentId);
-    if (!product) throw new Error('El producto ya no está disponible en el inventario actual.');
-    const lotId = agrochemicalLotDocumentId(registration.lotNumber, registration.expirationDate);
-    if (!lotId) throw new Error('El número de lote o la fecha de vencimiento no son válidos.');
-    const assignedQuantity = agrochemicalLots
-      .filter((lot) => lot.productDocumentId === product.id)
-      .reduce((sum, lot) => sum + Math.max(0, lot.quantity), 0);
-    const sourceEntry = registration.sourceEntryId
-      ? entryStockMovements.find((entry) => entry.id === registration.sourceEntryId)
-      : undefined;
-    if (registration.sourceEntryId && !sourceEntry) throw new Error('La entrada móvil ya no está disponible.');
-    if (!sourceEntry && assignedQuantity + registration.quantity > product.saldo + 1e-7) {
-      throw new Error('La cantidad del lote supera el saldo del producto que todavía no tiene lote asignado.');
-    }
-    if (registration.linkExistingLotWithoutStockIncrease && !sourceEntry) {
-      throw new Error('Solo una entrada móvil pendiente puede vincularse a un lote existente sin aumentar saldo.');
-    }
-    if (sourceEntry) {
-      if (sourceEntry.validationIssue) throw new Error(sourceEntry.validationIssue);
-      if (sourceEntry.productId !== product.id || !moduleMatches(sourceEntry.moduleName, 'Agroquimicos')) {
-        throw new Error('La entrada móvil no corresponde al producto Agroquímico seleccionado.');
-      }
-    }
-
-    const productRef = doc(db, 'existencias', product.id);
-    const lotRef = doc(productRef, 'lotes_agroquimicos', lotId);
-    const movementRef = sourceEntry ? doc(db, 'movimientos', sourceEntry.id) : null;
-    const assignmentRef = sourceEntry
-      ? doc(productRef, 'asignaciones_entradas_agroquimicos', sourceEntry.id)
-      : null;
-    await runTransaction(db, async (transaction) => {
-      const [currentProduct, currentLot, currentMovement, currentAssignment] = await Promise.all([
-        transaction.get(productRef),
-        transaction.get(lotRef),
-        movementRef ? transaction.get(movementRef) : Promise.resolve(null),
-        assignmentRef ? transaction.get(assignmentRef) : Promise.resolve(null),
-      ]);
-      if (!currentProduct.exists() || !moduleMatches(textValue(currentProduct.data(), 'modulo'), 'Agroquimicos')) {
-        throw new Error('El producto cambió y ya no pertenece a Agroquímicos.');
-      }
-      const liveStock = numberValue(currentProduct.data(), 'cantidad', 'stock_actual', 'stock', 'saldo');
-      if (!sourceEntry && assignedQuantity + registration.quantity > liveStock + 1e-7) {
-        throw new Error('El saldo del producto cambió y ya no permite asignar esa cantidad.');
-      }
-
-      if (currentLot.exists()) {
-        const existingLotNumber = textValue(currentLot.data(), 'numero_lote', 'lote', 'numeroLote');
-        const existingExpiration = dateTextValue(currentLot.data(), 'fecha_vencimiento', 'fechaVencimiento', 'vencimiento');
-        if (
-          normalize(existingLotNumber) !== normalize(registration.lotNumber)
-          || existingExpiration !== registration.expirationDate
-        ) throw new Error('El identificador del lote coincide con un registro de datos diferentes.');
-      } else if (registration.linkExistingLotWithoutStockIncrease) {
-        throw new Error('El lote seleccionado ya no existe; no se puede vincular una entrada sin aumentar saldo.');
-      }
-
-      let entryAssignments = currentLot.exists()
-        ? agrochemicalLotEntryAssignments(currentLot.data())
-        : [];
-      let assignedToEntry = 0;
-      if (sourceEntry && currentMovement && assignmentRef) {
-        if (!currentMovement.exists()) throw new Error('La entrada móvil ya no existe.');
-        const movementData = currentMovement.data();
-        const movementProductId = textValue(movementData, 'producto_id', 'documento_id');
-        const movementQuantity = numberValue(movementData, 'cantidad', 'cantidad_entrada', 'cantidadNumerica');
-        if (
-          textValue(movementData, 'clase_movimiento') !== 'entrada_stock'
-          || movementProductId !== product.id
-          || !moduleMatches(textValue(movementData, 'modulo'), 'Agroquimicos')
-          || movementQuantity <= 0
-        ) throw new Error('La entrada cambió o ya no es una entrada válida de Agroquímicos.');
-        assignedToEntry = currentAssignment?.exists()
-          ? numberValue(currentAssignment.data(), 'cantidad_asignada')
-          : agrochemicalLots.flatMap((lot) => lot.entryAssignments)
-            .filter((assignment) => assignment.entryId === sourceEntry.id)
-            .reduce((sum, assignment) => sum + assignment.quantity, 0);
-        if (assignedToEntry + registration.quantity > movementQuantity + 1e-7) {
-          throw new Error('La cantidad supera lo que queda pendiente de esa entrada móvil.');
-        }
-        const previousForEntry = entryAssignments.find((entry) => entry.entryId === sourceEntry.id)?.quantity ?? 0;
-        entryAssignments = [
-          ...entryAssignments.filter((entry) => entry.entryId !== sourceEntry.id),
-          { entryId: sourceEntry.id, quantity: previousForEntry + registration.quantity },
-        ];
-        transaction.set(assignmentRef, {
-          entrada_id: sourceEntry.id,
-          producto_id: product.id,
-          cantidad_entrada: movementQuantity,
-          cantidad_asignada: assignedToEntry + registration.quantity,
-          asignacion_completa: Math.abs((assignedToEntry + registration.quantity) - movementQuantity) < 1e-7,
-          actualizado_en: serverTimestamp(),
-        }, { merge: true });
-      }
-
-      const previousLotQuantity = currentLot.exists()
-        ? numberValue(currentLot.data(), 'cantidad_disponible', 'cantidad', 'saldo')
-        : 0;
-      const previousInitialQuantity = currentLot.exists()
-        ? numberValue(currentLot.data(), 'cantidad_inicial', 'cantidad_entrada', 'cantidad')
-        : 0;
-      const previousReceivedAt = currentLot.exists()
-        ? dateTextValue(currentLot.data(), 'fecha_ingreso', 'fecha_entrada', 'createdAt', 'creado_en')
-        : '';
-      const quantityToAddToLot = registration.linkExistingLotWithoutStockIncrease ? 0 : registration.quantity;
-      transaction.set(lotRef, {
-        producto_id: product.id,
-        codigo_producto: product.codigo,
-        producto: product.descripcion,
-        numero_lote: registration.lotNumber,
-        fecha_vencimiento: registration.expirationDate,
-        fecha_ingreso: previousReceivedAt || registration.receivedAt,
-        cantidad_inicial: previousInitialQuantity + quantityToAddToLot,
-        cantidad_disponible: previousLotQuantity + quantityToAddToLot,
-        asignaciones_entrada: entryAssignments.map((entry) => ({
-          entrada_id: entry.entryId,
-          cantidad: entry.quantity,
-        })),
-        unidad: product.unidad,
-        ubicacion: product.ubicacion || '',
-        ...(!currentLot.exists() ? { creado_en: serverTimestamp() } : {}),
-        actualizado_en: serverTimestamp(),
-      });
-    });
+    await registerAgrochemicalLotOnServer(firebaseApp, registration);
   }
   const toolsInventory = useMemo(
     () => visibleToolInventory(tools, usingCachedData && tools.length === 0 && !online),
@@ -2414,7 +2290,7 @@ function AppShell({ user }: { user: User }) {
         return;
       }
       const reportLots = isAgroquimicosModule
-        ? (await getDocsFromServer(collectionGroup(db, 'lotes_agroquimicos'))).docs.map(readAgrochemicalLotDoc)
+        ? (await getDocsFromServer(collectionGroup(db, 'lotes_agroquimicos'))).docs.filter(doc => isCanonicalAgrochemicalLotPath(doc.ref.path)).map(readAgrochemicalLotDoc)
         : [];
       const payload = crearReporteMovimientos({
         moduleName: module,
@@ -3140,6 +3016,7 @@ function AppShell({ user }: { user: User }) {
           loading={agrochemicalLotsLoading}
           sourceError={agrochemicalLotsError}
           onRegister={registerAgrochemicalLot}
+          registrationScope={`${firebaseProjectId}:${user.uid}`}
           onClose={() => setShowAgrochemicalExpirationModal(false)}
         />
       )}

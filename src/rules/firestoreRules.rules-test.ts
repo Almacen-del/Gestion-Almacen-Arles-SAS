@@ -214,38 +214,18 @@ describe('isActiveUser en firestore.rules', () => {
     await assertSucceeds(getDoc(legacyRef));
   });
 
-  it('permite registrar y consultar por collectionGroup un lote válido de Agroquímicos', async () => {
+  it('consulta lotes por collectionGroup pero asigna solo mediante el servidor', async () => {
     await seedUser('lotes-activo', { activo: true, rol: 'almacenista' });
-    await testEnvironment.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), 'existencias', 'agro-1'), {
-        modulo: 'Agroquímicos',
-        cantidad: 10,
-      });
+    const payload = { producto_id: 'agro-1', numero_lote: 'LOTE-1', fecha_vencimiento: '2028-02',
+      cantidad_inicial: 10, cantidad_disponible: 10, unidad: 'KG' };
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'existencias/agro-1'), { modulo: 'Agroquímicos', cantidad: 10 });
+      await setDoc(doc(context.firestore(), 'existencias/agro-1/lotes_agroquimicos/LOTE-1'), payload);
     });
-    const context = testEnvironment.authenticatedContext('lotes-activo', { email: 'lotes@example.com' });
-    await assertSucceeds(setDoc(
-      doc(context.firestore(), 'existencias', 'agro-1', 'lotes_agroquimicos', 'LOTE-1__2027-01-01'),
-      {
-        producto_id: 'agro-1',
-        numero_lote: 'LOTE-1',
-        fecha_vencimiento: '2027-01-01',
-        cantidad_inicial: 10,
-        cantidad_disponible: 10,
-        unidad: 'KG',
-      },
-    ));
-    await assertSucceeds(getDocs(query(collectionGroup(context.firestore(), 'lotes_agroquimicos'))));
-    await assertSucceeds(setDoc(
-      doc(context.firestore(), 'existencias', 'agro-1', 'lotes_agroquimicos', 'LOTE-MES__2028-02'),
-      {
-        producto_id: 'agro-1',
-        numero_lote: 'LOTE-MES',
-        fecha_vencimiento: '2028-02',
-        cantidad_inicial: 1,
-        cantidad_disponible: 1,
-        unidad: 'KG',
-      },
-    ));
+    const db = testEnvironment.authenticatedContext('lotes-activo', { email: 'lotes@example.com' }).firestore();
+    const lots = await assertSucceeds(getDocs(query(collectionGroup(db, 'lotes_agroquimicos'))));
+    expect(lots.size).toBe(1);
+    await assertFails(setDoc(doc(db, 'existencias/agro-1/lotes_agroquimicos/LOTE-2'), payload));
   });
 
   it('rechaza lotes negativos, mayores a la cantidad inicial o bajo productos de otro módulo', async () => {
@@ -292,8 +272,12 @@ describe('isActiveUser en firestore.rules', () => {
       cantidad_entrada: 8,
       cantidad_asignada: 3,
     };
-    await assertSucceeds(setDoc(assignmentRef, payload));
-    await assertSucceeds(setDoc(assignmentRef, { ...payload, cantidad_asignada: 8 }));
+    await assertFails(setDoc(assignmentRef, payload));
+    await testEnvironment.withSecurityRulesDisabled(async ctx => {
+      await setDoc(doc(ctx.firestore(), 'existencias/agro-3/asignaciones_entradas_agroquimicos/entrada-1'), payload);
+    });
+    await assertSucceeds(getDoc(assignmentRef));
+    await assertFails(setDoc(assignmentRef, { ...payload, cantidad_asignada: 8 }));
     await assertFails(setDoc(assignmentRef, { ...payload, producto_id: 'otro-producto' }));
     await assertFails(setDoc(assignmentRef, { ...payload, cantidad_asignada: 9 }));
   });

@@ -331,31 +331,24 @@ service cloud.firestore {
     // permite consultas collectionGroup sin abrir otras colecciones.
     match /{parentPath=**}/lotes_agroquimicos/{lotId} {
       allow read: if isActiveUser();
-      allow create: if canManageInventory()
-        && isAgrochemicalParent(parentPath)
-        && validAgrochemicalLot(request.resource.data);
-      allow update: if canManageInventory()
-        && isAgrochemicalParent(parentPath)
-        && validAgrochemicalLot(request.resource.data)
-        && request.resource.data.producto_id == resource.data.producto_id
-        && request.resource.data.numero_lote == resource.data.numero_lote
-        && request.resource.data.fecha_vencimiento == resource.data.fecha_vencimiento;
-      allow delete: if false;
+      // Stage 2: only the authenticated server transaction may assign or deduct
+      // lots. An old tab must not bypass the product lock or the operation receipt.
+      allow write: if false;
     }
 
     match /{parentPath=**}/asignaciones_entradas_agroquimicos/{entryId} {
       allow read: if isActiveUser();
-      allow create: if canManageInventory()
-        && isAgrochemicalParent(parentPath)
-        && validAgrochemicalEntryAssignment(request.resource.data)
-        && request.resource.data.entrada_id == entryId;
-      allow update: if canManageInventory()
-        && isAgrochemicalParent(parentPath)
-        && validAgrochemicalEntryAssignment(request.resource.data)
-        && request.resource.data.entrada_id == entryId
-        && request.resource.data.entrada_id == resource.data.entrada_id
-        && request.resource.data.producto_id == resource.data.producto_id;
-      allow delete: if false;
+      allow write: if false;
+    }
+
+    match /operaciones_lotes_agroquimicos/{operationId} {
+      allow read: if canManageInventory();
+      allow write: if false;
+    }
+
+    match /controles_lotes_agroquimicos/{productId} {
+      allow read: if canManageInventory();
+      allow write: if false;
     }
 
     match /cierres_valoracion_inventario/{periodo} {

@@ -75,10 +75,13 @@ describe('Excel del histórico mensual', () => {
     const cases = [
       { destinationLot: 'Piso 4', recipientName: 'Dennys Bastidas', expected: 'Vivero', moduleName: 'ASEO' },
       { destinationLot: 'Personal', recipientName: ' Rafael Franco ', expected: 'Vivero', moduleName: 'ASEO' },
-      { destinationLot: 'Personal', recipientName: 'Pedro Vizcaíno', expected: 'COP (Centro de Operaciones)', moduleName: 'ASEO' },
+      { destinationLot: 'Personal', recipientName: 'Pedro Vizcaíno', expected: 'Centro Operativo (COP)', moduleName: 'ASEO' },
       { destinationLot: 'Piso 3', recipientName: 'Otra persona', expected: 'Sin lote de destino', moduleName: 'ASEO' },
       { destinationLot: 'Lote 02 Aplicación edáfica', recipientName: '', expected: '2', moduleName: 'Agroquímicos' },
-      { destinationLot: 'Recorrido plantación', recipientName: '', expected: 'Plantación', moduleName: 'Combustible' },
+      { destinationLot: 'Recorrido plantación', recipientName: '', expected: 'Centro Operativo (COP)', moduleName: 'Combustible' },
+      { destinationLot: 'Plantación', recipientName: '', expected: 'Centro Operativo (COP)', moduleName: 'Combustible' },
+      { destinationLot: 'COP (Centro de Operaciones)', recipientName: '', expected: 'Centro Operativo (COP)', moduleName: 'Combustible' },
+      { destinationLot: 'California', recipientName: '', expected: 'California', moduleName: 'Combustible' },
       { destinationLot: 'Piso 5', recipientName: '', expected: 'Personal', moduleName: 'EPP' },
       { destinationLot: 'Supervisor', recipientName: '', expected: 'Personal', moduleName: 'Combustible' },
     ];
@@ -95,6 +98,9 @@ describe('Excel del histórico mensual', () => {
     const labels = book.getWorksheet('Gasto por lote')!.getColumn(1).values;
     expect(labels).toContain('Lote Vivero');
     expect(labels).toContain('Lote COP');
+    expect(labels.filter(value => value === 'Lote COP')).toHaveLength(1);
+    expect(labels).toContain('Lote California');
+    expect(labels.some(value => /plantaci[oó]n|recorridos?/i.test(String(value)))).toBe(false);
     expect(labels.some(value => /piso/i.test(String(value)))).toBe(false);
   });
   it('organiza todo el informe en hojas uniformes, auditables y sin columnas de stock antiguo/nuevo', async () => {
@@ -113,7 +119,7 @@ describe('Excel del histórico mensual', () => {
       'Persona', 'Maquinaria', 'Precio base', 'Unidad precio', 'Factor de conversión', 'Gasto de salida', 'Estado',
     ]);
     expect(movements.getCell('K8').value).toBe('No aplica');
-    expect(movements.getCell('I9').value).toBe('Lote Plantación');
+    expect(movements.getCell('I9').value).toBe('Lote COP');
     expect(movements.getCell('K9').value).toBe('Moto 32H y 21G');
     expect(movements.getCell('N10').value).toBe(1);
     expect(movements.getCell('K11').value).toBe('No aplica');

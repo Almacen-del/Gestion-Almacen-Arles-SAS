@@ -48,7 +48,9 @@ export type MonthlyActivitySnapshot = {
 };
 
 export const UNKNOWN_DESTINATION_LOT = 'Sin lote de destino';
-export const FUEL_ROUTE_DESTINATION = 'Plantación';
+export const COP_DESTINATION = 'Centro Operativo (COP)';
+// User-confirmed equivalence: Plantación and Recorrido are the same expense area as COP.
+export const FUEL_ROUTE_DESTINATION = COP_DESTINATION;
 export const PERSONAL_DESTINATION = 'Personal';
 
 function usesPersonalDestination(moduleName: string) {
@@ -89,7 +91,7 @@ function confirmedRecipientDestination(recipientName: string | undefined) {
   // Match complete names only; do not infer destinations for other recipients.
   const name = normalizeMovementText(recipientName ?? '').replace(/\s+/g, ' ').trim();
   if (['dennys bastidas', 'dennis bastidas', 'denys bastidas', 'rafael franco'].includes(name)) return 'Vivero';
-  if (name === 'pedro vizcaino') return 'COP (Centro de Operaciones)';
+  if (name === 'pedro vizcaino') return COP_DESTINATION;
   return '';
 }
 
@@ -120,9 +122,9 @@ function canonicalDestination(value: string) {
   const clean = cleanDestination(value);
   const key = normalizeMovementText(clean);
   if (!key || /^(?:n\/?a|sin (?:lote(?: de destino)?|asignar|destino)|no registrado)$/.test(key)) return '';
-  if (/^(?:c\.?o\.?p\.?|centro de operaciones|cop\s*\(centro de operaciones\))$/.test(key)) return 'COP (Centro de Operaciones)';
+  if (/^(?:c\.?o\.?p\.?|centro (?:operativo|de operaciones)(?:\s*\(cop\))?|cop\s*\(centro (?:operativo|de operaciones)\))$/.test(key)) return COP_DESTINATION;
   if (/^(?:jardin clonal|(?:lote )?ex(?:p)?erimental)$/.test(key)) return key === 'jardin clonal' ? 'Jardín clonal' : 'Experimental';
-  if (/\brecorridos?\b/.test(key) || key === 'plantacion') return FUEL_ROUTE_DESTINATION;
+  if (isRouteLabel(clean) || key === 'plantacion') return FUEL_ROUTE_DESTINATION;
   if (/^(?:la\s+)?california$/.test(key)) return 'California';
   // Keep the lot identifiers, not the agricultural task or a trailing description.
   // A joint delivery stays in ONE joint group: never duplicate/split its cost.
@@ -148,7 +150,7 @@ function namedDestination(texts: readonly (string | undefined)[]) {
     // A named place is not an amount in COP or a negated/origin reference.
     if (/\b(?:sin|no|desde|origen)\b/.test(normalized)
       || /(?:\d[\d.,\s]*\s*cop\b|\bcop\s*\$?\s*\d)/.test(normalized)) continue;
-    for (const match of normalized.matchAll(/\b(?:centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor|jardin clonal|ex(?:p)?erimental|vivero|california)\b/g)) {
+    for (const match of normalized.matchAll(/\b(?:centro operativo|centro de operaciones|c\.?o\.?p\.?|taller|cocina|comedor|jardin clonal|ex(?:p)?erimental|vivero|california|plantacion)\b/g)) {
       const name = canonicalDestination(match[0]);
       // Preserve qualified locations; do not merge Taller 1 and Taller 2.
       const suffix = normalized.slice((match.index ?? 0) + match[0].length).trim();
@@ -169,8 +171,8 @@ export function destinationLotOf(source: MonthlyActivitySource) {
     && (usesPersonalDestination(source.module)
       || isPersonalAseoProduct(source.module, source.code ?? '')
       || isSupervisorExit(source))) return PERSONAL_DESTINATION;
-  if (isConfirmedCopFuelWork(source)) return 'COP (Centro de Operaciones)';
-  if (isConfirmedCopOperationalWork(source)) return 'COP (Centro de Operaciones)';
+  if (isConfirmedCopFuelWork(source)) return COP_DESTINATION;
+  if (isConfirmedCopOperationalWork(source)) return COP_DESTINATION;
   const readDestination = (value: string) => isStorageFloorDestination(value) ? '' : canonicalDestination(value);
   const explicit = readDestination(source.destinationLot ?? '');
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
@@ -383,7 +385,7 @@ export function isPersonnelExpense(row: MonthlyActivityRow) {
 export function formatDestinationLot(value: string) {
   const canonical = canonicalDestination(value);
   if (!canonical || canonical === UNKNOWN_DESTINATION_LOT) return UNKNOWN_DESTINATION_LOT;
-  const short = canonical === 'COP (Centro de Operaciones)' ? 'COP' : canonical;
+  const short = canonical === COP_DESTINATION ? 'COP' : canonical;
   return `Lote ${short}`;
 }
 

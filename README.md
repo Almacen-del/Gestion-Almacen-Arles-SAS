@@ -1,6 +1,6 @@
 # Gestión de Almacén ARLES — Web
 
-Versión: **0.1.8-web-final**
+La versión de cada compilación se identifica en el pie del panel y en `/release.json`.
 
 Esta carpeta es la entrega final de la migración principal de la aplicación Electron a una aplicación web React + TypeScript + Vite conectada a Firebase Authentication y Cloud Firestore.
 
@@ -16,7 +16,7 @@ La aplicación ya no necesita Electron para su ejecución web. Se conservó la l
 - Búsqueda y filtros
 - Valoración y análisis de inventario
 - Exportación `.xlsx` desde navegador
-- Firebase Hosting
+- Vercel (sitio web de producción)
 - Reglas Firestore propuestas y pruebas de reglas
 - App Check opcional
 
@@ -73,21 +73,19 @@ El resultado se genera en `dist/`.
 
 ## Despliegue de la web
 
-```bash
-npm run deploy:hosting
-```
+El único destino vigente es [Vercel](https://gestion-almacen-arles-sas.vercel.app/),
+publicado por su integración con la rama `main` de GitHub. Primero ejecuta
+`npm run verify:web`, revisa el commit y obtén autorización para publicarlo.
+Consulta [DEPLOYMENT.md](DEPLOYMENT.md) para validación, comprobación y reversión.
 
-O build + despliegue:
-
-```bash
-npm run deploy:web
-```
+Los comandos antiguos `deploy:web`, `deploy:hosting` y `deploy:all` ahora se detienen
+sin publicar. Se retiró la configuración local de Firebase Hosting; esto no elimina
+el sitio antiguo que ya estuviera publicado allí.
 
 ### Importante sobre reglas Firestore
 
-`deploy:hosting` **no** modifica las reglas de Firestore.
-
-No uses `npm run deploy:all` hasta validar `firestore.rules` contra todos los clientes que comparten la misma base de datos.
+Las reglas Firestore requieren pruebas y autorización separadas mediante
+`npm run test:rules` y `npm run deploy:rules`. Publicar la web no publica reglas ni funciones.
 
 ## Variables de entorno
 

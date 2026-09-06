@@ -41,4 +41,12 @@ describe('configuración segura de Firebase', () => {
   it('bloquea la inicialización si falta configuración', () => {
     expect(() => requireFirebaseConfig({})).toThrow(FirebaseConfigurationError);
   });
+  it('acepta los identificadores opcionales de Analytics sin exigirlos para abrir el panel', () => {
+    const config = requireFirebaseConfig({ ...validEnvironment,
+      VITE_FIREBASE_APP_ID: ' test-app ', VITE_FIREBASE_MEASUREMENT_ID: ' G-TEST ',
+    });
+    expect(config.appId).toBe('test-app');
+    expect(config.measurementId).toBe('G-TEST');
+    expect(requireFirebaseConfig(validEnvironment)).not.toHaveProperty('measurementId');
+  });
 });

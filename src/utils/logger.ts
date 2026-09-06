@@ -1,27 +1,5 @@
-/**
- * Sistema de logging y monitoreo para producción
- * Captura errores, eventos y métricas en Firebase
- */
-
-import { getAnalytics, logEvent } from 'firebase/analytics';
-
-let analytics: ReturnType<typeof getAnalytics> | null = null;
-
-try {
-  analytics = getAnalytics();
-} catch {
-  console.warn('Google Analytics no disponible');
-}
-
-// Tipos de eventos
-export enum LogEventType {
-  ERROR = 'error',
-  WARNING = 'warning',
-  USER_ACTION = 'user_action',
-  PERFORMANCE = 'performance',
-  AUTH = 'auth',
-  DATA_SYNC = 'data_sync',
-}
+import type { FirebaseApp } from 'firebase/app';
+import { APP_RELEASE } from '../release';
 
 interface LogContext {
   userId?: string;
@@ -29,229 +7,134 @@ interface LogContext {
   action?: string;
   metadata?: Record<string, unknown>;
 }
+type MonitoringStatus = 'local' | 'initializing' | 'remote' | 'unavailable';
+type Diagnostic = {
+  kind: 'error' | 'warning' | 'auth' | 'action' | 'sync' | 'performance';
+  source: string;
+  category: string;
+  release: string;
+  timestamp: number;
+};
+const sources = new Set([
+  'bootstrap', 'ErrorBoundary', 'useUserRoleListener', 'retireLegacyPwa',
+  'window:error', 'window:unhandledrejection',
+]);
+const categories = new Set([
+  'permission-denied', 'unauthenticated', 'unavailable', 'deadline-exceeded',
+  'resource-exhausted', 'failed-precondition', 'network-request-failed',
+]);
+let status: MonitoringStatus = 'local';
+let initialization: Promise<MonitoringStatus> | undefined;
+let send: ((diagnostic: Diagnostic) => void) | undefined;
+let sent = 0;
+const queued: Diagnostic[] = [];
+const memoryLogs: Diagnostic[] = [];
+const storageKey = 'arles_technical_diagnostics_v1';
 
-/**
- * Logger central para la aplicación
+export function getMonitoringStatus() { return status; }
+
+function categoryOf(error: unknown) {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : '';
+  const category = typeof code === 'string' ? code.split('/').at(-1) ?? '' : '';
+  return categories.has(category) ? category : 'unexpected';
+}
+
+function emit(diagnostic: Diagnostic) {
+  if (!send || sent >= 20) return;
+  sent += 1;
+  try { send(diagnostic); } catch { /* Diagnostics must never break a business operation. */ }
+}
+
+function record(kind: Diagnostic['kind'], context?: LogContext, category = 'event') {
+  const diagnostic: Diagnostic = {
+    kind, source: sources.has(context?.component ?? '') ? context!.component! : 'application',
+    category, release: APP_RELEASE.id, timestamp: Date.now(),
+  };
+  // Never persist/send messages, stacks, user IDs, free text, URLs or metadata.
+  if (kind === 'error' || kind === 'warning') {
+    memoryLogs.push(diagnostic);
+    if (memoryLogs.length > 50) memoryLogs.shift();
+    try { sessionStorage.setItem(storageKey, JSON.stringify(memoryLogs)); } catch { /* unavailable storage */ }
+    console[kind === 'error' ? 'error' : 'warn']('[Diagnóstico técnico]', diagnostic);
+  }
+  if (status === 'initializing') {
+    if (queued.length < 10) queued.push(diagnostic);
+  } else if (status === 'remote') emit(diagnostic);
+}
+
+/** Called explicitly AFTER initializeApp, never as a side effect of importing Logger.
+ * Remote collection requires deployment opt-in; unsupported/offline browsers stay local.
  */
+export function initializeMonitoring(app: FirebaseApp, options: { enabled: boolean }): Promise<MonitoringStatus> {
+  if (!options.enabled || navigator.doNotTrack === '1' ||
+      !app.options.appId || !app.options.measurementId) return Promise.resolve(status);
+  if (initialization) return initialization;
+  status = 'initializing';
+  initialization = (async () => {
+    try {
+      const sdk = await import('firebase/analytics');
+      if (!await sdk.isSupported()) { status = 'unavailable'; return status; }
+      const analytics = sdk.initializeAnalytics(app, { config: {
+        send_page_view: false,
+        allow_google_signals: false,
+        allow_ad_personalization_signals: false,
+        page_location: location.origin,
+        page_referrer: '',
+        page_title: 'Gestión de Almacén',
+      } });
+      send = (diagnostic) => sdk.logEvent(analytics, 'app_diagnostic', {
+        diagnostic_kind: diagnostic.kind,
+        diagnostic_source: diagnostic.source,
+        diagnostic_category: diagnostic.category,
+        app_release: diagnostic.release,
+      });
+      status = 'remote'; // SDK configured, not a guarantee of delivery through an ad blocker.
+      queued.splice(0).forEach(emit);
+      return status;
+    } catch {
+      status = 'unavailable';
+      return status;
+    } finally {
+      queued.length = 0;
+    }
+  })();
+  return initialization;
+}
+
 export const Logger = {
-  /**
-   * Log de errores
-   */
-  error: (error: Error | string, context?: LogContext) => {
-    const message = error instanceof Error ? error.message : error;
-    const stack = error instanceof Error ? error.stack : '';
-
-    console.error(`[ERROR] ${message}`, { stack, context });
-
-    // Enviar a Analytics si está disponible
-    if (analytics) {
-      try {
-        logEvent(analytics, 'app_error', {
-          error_message: message,
-          error_component: context?.component || 'unknown',
-          error_action: context?.action || '',
-          user_id: context?.userId || 'anonymous',
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Error al loguear error:', e);
-      }
-    }
-
-    // Guardar en localStorage para debugging
-    saveErrorLog({
-      type: 'error',
-      message,
-      stack,
-      context,
-      timestamp: Date.now(),
-    });
-  },
-
-  /**
-   * Log de advertencias
-   */
-  warn: (message: string, context?: LogContext) => {
-    console.warn(`[WARN] ${message}`, context);
-
-    if (analytics) {
-      try {
-        logEvent(analytics, 'app_warning', {
-          warning_message: message,
-          component: context?.component || 'unknown',
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Error al loguear warning:', e);
-      }
-    }
-  },
-
-  /**
-   * Log de acciones de usuario
-   */
-  userAction: (action: string, context?: LogContext) => {
-    console.log(`[USER ACTION] ${action}`, context?.metadata);
-
-    if (analytics) {
-      try {
-        logEvent(analytics, 'user_action', {
-          action_name: action,
-          component: context?.component || 'unknown',
-          user_id: context?.userId || 'anonymous',
-          ...context?.metadata,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Error al loguear user action:', e);
-      }
-    }
-  },
-
-  /**
-   * Log de autenticación
-   */
-  auth: (event: string, userId: string, success: boolean, details?: Record<string, unknown>) => {
-    console.log(`[AUTH] ${event}:`, { userId, success, details });
-
-    if (analytics) {
-      try {
-        logEvent(analytics, 'auth_event', {
-          auth_event: event,
-          user_id: userId,
-          success,
-          ...details,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Error al loguear auth:', e);
-      }
-    }
-  },
-
-  /**
-   * Log de sincronización de datos
-   */
-  dataSync: (event: string, collection: string, status: 'success' | 'error' | 'pending', details?: Record<string, unknown>) => {
-    console.log(`[DATA SYNC] ${event} - ${collection}:`, { status, details });
-
-    if (analytics) {
-      try {
-        logEvent(analytics, 'data_sync', {
-          sync_event: event,
-          collection_name: collection,
-          sync_status: status,
-          ...details,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Error al loguear data sync:', e);
-      }
-    }
-  },
-
-  /**
-   * Log de performance
-   */
-  performance: (metric: string, duration: number, threshold?: number) => {
-    const isSlowOk = !threshold || duration <= threshold;
-    const level = isSlowOk ? 'log' : 'warn';
-    console[level](`[PERFORMANCE] ${metric}: ${duration}ms`, { threshold });
-
-    if (analytics) {
-      try {
-        logEvent(analytics, 'performance_metric', {
-          metric_name: metric,
-          duration_ms: duration,
-          is_slow: !isSlowOk,
-          threshold_ms: threshold || 0,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (e) {
-        console.error('Error al loguear performance:', e);
-      }
-    }
-  },
+  error: (error: Error | string, context?: LogContext) => record('error', context, categoryOf(error)),
+  warn: (_message: string, context?: LogContext) => record('warning', context),
+  userAction: (_action: string, context?: LogContext) => record('action', context),
+  auth: (_event: string, _userId: string, success: boolean, _details?: Record<string, unknown>) =>
+    record('auth', undefined, success ? 'success' : 'failure'),
+  dataSync: (_event: string, _collection: string, result: 'success' | 'error' | 'pending', _details?: Record<string, unknown>) =>
+    record('sync', undefined, result),
+  performance: (_metric: string, duration: number, threshold?: number) =>
+    record('performance', undefined, threshold && duration > threshold ? 'slow' : 'normal'),
 };
 
-/**
- * Guardar errores localmente para debugging
- */
-function saveErrorLog(log: {
-  type: string;
-  message: string;
-  stack?: string;
-  context?: LogContext;
-  timestamp: number;
-}) {
-  try {
-    const key = 'app_error_logs';
-    const existing = localStorage.getItem(key);
-    const logs = existing ? JSON.parse(existing) : [];
-
-    logs.push(log);
-
-    // Mantener solo los últimos 50 errores
-    if (logs.length > 50) {
-      logs.shift();
-    }
-
-    localStorage.setItem(key, JSON.stringify(logs));
-  } catch (e) {
-    console.error('Error al guardar log:', e);
-  }
+export function getErrorLogs(limit = 10): Diagnostic[] {
+  const count = Number.isFinite(limit) ? Math.max(0, Math.min(50, Math.floor(limit))) : 10;
+  return count ? memoryLogs.slice(-count) : [];
 }
-
-/**
- * Obtener logs de error guardados (para debugging)
- */
-export function getErrorLogs(limit = 10) {
-  try {
-    const key = 'app_error_logs';
-    const existing = localStorage.getItem(key);
-    const logs = existing ? JSON.parse(existing) : [];
-    return logs.slice(-limit);
-  } catch (e) {
-    console.error('Error al obtener logs:', e);
-    return [];
-  }
-}
-
-/**
- * Limpiar logs de error
- */
 export function clearErrorLogs() {
-  try {
-    localStorage.removeItem('app_error_logs');
-  } catch (e) {
-    console.error('Error al limpiar logs:', e);
-  }
+  memoryLogs.length = 0;
+  try { sessionStorage.removeItem(storageKey); } catch { /* unavailable storage */ }
 }
-
-/**
- * Interceptor global de errores
- */
+let removeGlobalHandlers: (() => void) | undefined;
 export function setupGlobalErrorHandler() {
-  // Errores no capturados
-  window.addEventListener('error', (event) => {
-    Logger.error(event.error || new Error(event.message), {
-      component: 'window:error',
-      metadata: {
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-      },
-    });
-  });
-
-  // Promise rejections no manejadas
-  window.addEventListener('unhandledrejection', (event) => {
-    Logger.error(
-      event.reason instanceof Error ? event.reason : new Error(String(event.reason)),
-      {
-        component: 'window:unhandledrejection',
-        metadata: { promise: String(event.promise) },
-      }
-    );
-  });
+  if (removeGlobalHandlers) return removeGlobalHandlers;
+  // The old logger stored raw messages/identities indefinitely. Remove only its own key.
+  try { localStorage.removeItem('app_error_logs'); } catch { /* unavailable storage */ }
+  const onError = (event: ErrorEvent) => Logger.error(event.error || event.message, { component: 'window:error' });
+  const onRejection = (event: PromiseRejectionEvent) =>
+    Logger.error(event.reason, { component: 'window:unhandledrejection' });
+  window.addEventListener('error', onError);
+  window.addEventListener('unhandledrejection', onRejection);
+  removeGlobalHandlers = () => {
+    window.removeEventListener('error', onError);
+    window.removeEventListener('unhandledrejection', onRejection);
+    removeGlobalHandlers = undefined;
+  };
+  return removeGlobalHandlers;
 }

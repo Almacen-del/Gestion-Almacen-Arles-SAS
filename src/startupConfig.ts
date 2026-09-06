@@ -14,6 +14,8 @@ export type ValidatedFirebaseConfig = {
   projectId: string;
   storageBucket: string;
   messagingSenderId: string;
+  appId?: string;
+  measurementId?: string;
 };
 
 function normalizedEnvironmentValue(value: unknown) {
@@ -40,6 +42,8 @@ export function validateFirebaseEnvironment(environment: object) {
       projectId: values.VITE_FIREBASE_PROJECT_ID,
       storageBucket: values.VITE_FIREBASE_STORAGE_BUCKET,
       messagingSenderId: values.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      ...(normalizedEnvironmentValue(valuesByName.VITE_FIREBASE_APP_ID) ? { appId: normalizedEnvironmentValue(valuesByName.VITE_FIREBASE_APP_ID) } : {}),
+      ...(normalizedEnvironmentValue(valuesByName.VITE_FIREBASE_MEASUREMENT_ID) ? { measurementId: normalizedEnvironmentValue(valuesByName.VITE_FIREBASE_MEASUREMENT_ID) } : {}),
     } satisfies ValidatedFirebaseConfig,
   };
 }

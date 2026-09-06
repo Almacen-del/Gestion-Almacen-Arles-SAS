@@ -17,10 +17,11 @@
     "audit:reconcile-inventory": "node admin/reconcileHistoricalInventory.cjs --project=arles-gestion",
     "audit:simulate-inventory-migration": "node admin/simulateHistoricalInventoryMigration.cjs",
     "deploy:rules": "firebase deploy --only firestore:rules",
-    "deploy:hosting": "firebase deploy --only hosting",
-    "deploy:web": "npm run build && firebase deploy --only hosting",
-    "deploy:all": "npm run build && firebase deploy --only hosting,firestore:rules",
-    "verify:web": "npm run test && npm run build"
+    "deploy:hosting": "node scripts/deployment-policy.mjs",
+    "deploy:web": "node scripts/deployment-policy.mjs",
+    "deploy:all": "node scripts/deployment-policy.mjs",
+    "verify:release": "node --check public/service-worker.js && node scripts/verify-release.mjs",
+    "verify:web": "npm run test && npm run build && npm run verify:release"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
@@ -44,6 +45,12 @@
   },
   "overrides": {
     "exceljs": {
+      "uuid": "11.1.1"
+    },
+    "gaxios@6": {
+      "uuid": "11.1.1"
+    },
+    "teeny-request@9": {
       "uuid": "11.1.1"
     }
   }

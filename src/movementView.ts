@@ -1,4 +1,7 @@
+import { isOperationalMovementVisible } from './movementVisibility';
+
 export type MovementViewRecord = {
+  hiddenFromOperationalHistory?: boolean;
   id: string;
   modulo: string;
   tipo: string;
@@ -158,6 +161,7 @@ export function filterAndSortMovementView<T extends MovementViewRecord>(
   const product = normalizeMovementText(filters.product);
 
   return movements
+    .filter(isOperationalMovementVisible)
     .filter(filters.belongsToScope)
     .filter((movement) => movementInDateRange(movement.fecha, filters.dateFrom, filters.dateTo))
     .filter((movement) => !code || normalizeMovementText(movement.codigo).includes(code))

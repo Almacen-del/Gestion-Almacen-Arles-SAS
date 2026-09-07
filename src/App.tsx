@@ -145,6 +145,7 @@ import {
   nextMovementDisplayLimit,
   shouldAutoLoadMovementPage,
 } from './movementView';
+import { isAuditedAnnulment } from './movementVisibility';
 import {
   beginTallerStatusUpdate,
   createInitialTallerStatusState,
@@ -232,6 +233,7 @@ type OccupiedSubmoduleGroup = {
 };
 
 type Movement = {
+  hiddenFromOperationalHistory?: boolean;
   destinationLot?: string;
   monthlyOccurredAt?: string;
   id: string;
@@ -669,6 +671,7 @@ function readMovementDoc(doc: QueryDocumentSnapshot): Movement {
   const tipo = textValue(data, 'tipoMovimiento', 'tipo', 'movimiento') || 'Movimiento';
 
   const movement: Movement = {
+    hiddenFromOperationalHistory: isAuditedAnnulment(data),
     destinationLot: textValue(data, 'lote_destino', 'loteDestino', 'lote_aplicacion', 'loteAplicacion'),
     monthlyOccurredAt: data.fecha instanceof Timestamp ? data.fecha.toDate().toISOString() : undefined,
     id: doc.id,

@@ -9,6 +9,7 @@ import { modules } from './theme';
 import type { AgrochemicalLot } from './agrochemicalLots';
 import { normalizarUbicacionAgroquimicos } from './agroquimicosCanonicos';
 import { createFuelDeliveryRows, type FuelDeliveryRow } from './fuelDeliveryReport';
+import { isOperationalMovementVisible } from './movementVisibility';
 
 export const REPORTE_MOVIMIENTOS_FILENAME = 'Reporte_Movimientos_ARLES.xlsx';
 
@@ -33,6 +34,7 @@ export function leerLotesSalidaReporte(data: Record<string, unknown>): LoteMovim
 }
 
 export type MovimientoParaReporte = {
+  hiddenFromOperationalHistory?: boolean;
   id: string;
   modulo: string;
   tipo: string;
@@ -858,9 +860,11 @@ export function crearReporteMovimientos(opciones: {
   coverageLabel: string;
 }): ReporteMovimientosPayload {
   const historialCompleto = opciones.historialCompleto ?? opciones.movimientos;
+  // Defense in depth for direct exporters; retain full reconciliation history.
+  const movimientosVisibles = opciones.movimientos.filter(isOperationalMovementVisible);
   const inventarioActual = opciones.inventarioActual ?? [];
   const categoriasBase = categoriasModuloSeleccionado(
-    opciones.movimientos,
+    movimientosVisibles,
     historialCompleto,
     inventarioActual,
     opciones.moduleName,
@@ -869,7 +873,7 @@ export function crearReporteMovimientos(opciones: {
 
   const filasPorMovimiento = new Map<string, FilaMovimientoExcel>();
   const categorias = nombresHojaUnicos(categoriasBase.map((categoria) => {
-    const movimientos = opciones.movimientos.filter((movimiento) => (
+    const movimientos = movimientosVisibles.filter((movimiento) => (
       movimientoPerteneceCategoria(movimiento, categoria)
     ));
     const historialCategoria = historialCompleto.filter((movimiento) => (
@@ -924,7 +928,7 @@ export function crearReporteMovimientos(opciones: {
     },
   );
 
-  const movimientosGenerales = opciones.movimientos
+  const movimientosGenerales = movimientosVisibles
     .map((movimiento) => filasPorMovimiento.get(movimiento.id))
     .filter((fila): fila is FilaMovimientoExcel => Boolean(fila));
   const entradasGenerales = movimientosGenerales.filter((fila) => fila.cantidad_entrada > 0);
@@ -937,7 +941,7 @@ export function crearReporteMovimientos(opciones: {
     suggestedFileName: coincideModulo(opciones.moduleName, 'Combustible')
       ? 'GA-F-006_Control_Combustible.xlsx' : nombreArchivoReporte(opciones.moduleName),
     ...(coincideModulo(opciones.moduleName, 'Combustible') ? {
-      fuelDeliveryRows: createFuelDeliveryRows(opciones.movimientos, opciones.usuarios),
+      fuelDeliveryRows: createFuelDeliveryRows(movimientosVisibles, opciones.usuarios),
     } : {}),
     periodLabel: opciones.periodLabel,
     exportDate: opciones.exportDate,

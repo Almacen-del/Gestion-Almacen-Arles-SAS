@@ -55,32 +55,33 @@ describe('Stage 1: append-only movement history and inventory safety',()=>{
   await env.withSecurityRulesDisabled(async ctx=>{await setDoc(doc(ctx.firestore(),'existencias/agro'),{modulo:'Agroquimicos',cantidad:10});});
   await assertFails(setDoc(doc(db,'existencias/agro/lotes_agroquimicos/L1'),{producto_id:'agro',numero_lote:'L1',fecha_vencimiento:'2027-01',cantidad_inicial:10,cantidad_disponible:10,unidad:'GRAMO'}));
  });
- it('retains mobile entry transactions, timestamps, decimals and stock aliases',async()=>{
+ it('requires the server commit protocol for legacy direct mobile entries',async()=>{
   const db=dbFor();const ref=doc(db,'existencias/p1');const movement=doc(db,'movimientos/mobile-entry');
-  await assertSucceeds(runTransaction(db,async tx=>{
+  await assertFails(runTransaction(db,async tx=>{
    const p=await tx.get(ref);const before=p.data()!.cantidad;
    tx.set(ref,{cantidad:before+3.5,stock_actual:before+3.5},{merge:true});
    tx.set(movement,{tipo:'Entrada',clase_movimiento:'entrada_stock',modulo:'EPP',cantidad:3.5,producto_id:'p1',documento_id:'p1',stock_anterior:before,stock_nuevo:before+3.5,stock_actualizado:true,creado_en:serverTimestamp()});
   }));
-  expect((await getDoc(ref)).data()!.cantidad).toBe(103.5);
+  expect((await getDoc(ref)).data()!.cantidad).toBe(100);
  });
- it.each(['existencias/p1','productos_aseo/p1'])('retains mobile exit transaction for %s',async productPath=>{
+ it.each(['existencias/p1','productos_aseo/p1'])('requires the server commit for direct exits from %s',async productPath=>{
   const db=dbFor(),ref=doc(db,productPath);
-  await assertSucceeds(runTransaction(db,async tx=>{
+  await assertFails(runTransaction(db,async tx=>{
    const p=await tx.get(ref);const stock=p.data()!.stock_actual;
    tx.set(ref,{cantidad:stock-2.25,stock_actual:stock-2.25},{merge:true});
    tx.set(doc(db,'movimientos/mobile-exit'),{tipo:'Salida',tipoMovimiento:'Salida',cantidad:2.25,producto_id:'p1',fecha:'2026-09-05',solicitante:'Persona de prueba'});
   }));
  });
- it('permits decimal-string tool movements and tool operational updates',async()=>{
-  const db=dbFor();await assertSucceeds(setDoc(doc(db,'movimientos/tool-exit'),{tipoMovimiento:'Salida',modulo:'TALLER',cantidad:'1.5'}));
-  await assertSucceeds(updateDoc(doc(db,'herramientas/t1'),{estado:'Ocupado',vehiculo_asignado:'Tractor 3',ultima_actualizacion:'2026-09-05'}));
+ it('requires tool movements and assignments to use the atomic server service',async()=>{
+  const db=dbFor();await assertFails(setDoc(doc(db,'movimientos/tool-exit'),{tipoMovimiento:'Salida',modulo:'TALLER',cantidad:'1.5'}));
+  await assertFails(updateDoc(doc(db,'herramientas/t1'),{estado:'Ocupado',vehiculo_asignado:'Tractor 3',ultima_actualizacion:'2026-09-05'}));
   await assertFails(updateDoc(doc(db,'herramientas/t1'),{cantidad_total:-1}));
  });
  it('rejects negative movement quantities and modification of stock-entry history',async()=>{
   const db=dbFor();await assertFails(setDoc(doc(db,'movimientos/bad'),{cantidad:-3}));
   await assertFails(setDoc(doc(db,'movimientos/bad'),{cantidad:'-3'}));
-  const ref=doc(db,'entradas_stock/e1');await assertSucceeds(setDoc(ref,{cantidad:3}));
+  const ref=doc(db,'entradas_stock/e1');await assertFails(setDoc(ref,{cantidad:3}));
+  await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'entradas_stock/e1'),{cantidad:3}));
   await assertFails(updateDoc(ref,{cantidad:4}));await assertFails(deleteDoc(ref));
  });
 });

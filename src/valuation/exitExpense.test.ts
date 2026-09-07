@@ -303,7 +303,7 @@ describe('actividad y desglose del gasto mensual', () => {
     }
     expect(destinationLotOf(placeMovement('frente', { module: 'Combustible', front: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
     expect(destinationLotOf(placeMovement('explicit', { module: 'Combustible', destinationLot: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
-    expect(destinationLotOf(placeMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
+    expect(destinationLotOf(placeMovement('prioridad', { module: 'Combustible', destinationLot: 'Lote 8', labor: 'Recorridos' }))).toBe('8');
     expect(destinationLotOf(placeMovement('numerado', { module: 'Combustible', zone: 'Lote 9', labor: 'Recorridos' }))).toBe(FUEL_ROUTE_DESTINATION);
     expect(destinationLotOf(placeMovement('otro', { module: 'Agroquimicos', labor: 'Recorridos' }))).toBe('Sin lote de destino');
     expect(destinationLotOf(placeMovement('dudoso', { module: 'Combustible', labor: 'Sin recorridos', front: 'Energía' }))).toBe('Sin lote de destino');

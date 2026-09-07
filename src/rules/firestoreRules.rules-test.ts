@@ -129,7 +129,8 @@ describe('isActiveUser en firestore.rules', () => {
         priceUnit: 'Unidad', expense: 200, issue: '',
       }],
     };
-    await setDoc(doc(firestore, 'movimientos', 'salida-1'), { cantidad: 2, observaciones: 'Original' });
+    await testEnvironment.withSecurityRulesDisabled(ctx =>
+      setDoc(doc(ctx.firestore(), 'movimientos', 'salida-1'), { cantidad: 2, observaciones: 'Original' }));
     await setDoc(doc(firestore, 'cierres_valoracion_inventario', '2026-08'), {
       periodo: '2026-08', estado: 'guardando', usuario_uid: 'actividad-activo', intento_id: 'intento-1',
       protocolo_cierre: 2, pulso: serverTimestamp(),

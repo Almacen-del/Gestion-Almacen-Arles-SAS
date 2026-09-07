@@ -118,7 +118,7 @@ function cleanDestination(value: string) {
     .replace(/^lotes?\b\s*[:=#]?\s*/i, '').replace(/\s+/g, ' ').replace(/[.,;]+$/, '').trim();
 }
 
-function canonicalDestination(value: string) {
+function canonicalDestination(value: string): string {
   const clean = cleanDestination(value);
   const key = normalizeMovementText(clean);
   if (!key || /^(?:n\/?a|sin (?:lote(?: de destino)?|asignar|destino)|no registrado)$/.test(key)) return '';
@@ -126,10 +126,21 @@ function canonicalDestination(value: string) {
   if (/^(?:jardin clonal|(?:lote )?ex(?:p)?erimental)$/.test(key)) return key === 'jardin clonal' ? 'Jardín clonal' : 'Experimental';
   if (isRouteLabel(clean) || key === 'plantacion') return FUEL_ROUTE_DESTINATION;
   if (/^(?:la\s+)?california$/.test(key)) return 'California';
+  // Mixed destinations are a single joint delivery, not just their numeric prefix.
+  const members = clean.split(/\s*(?:,|\/|&|\by\b)\s*/i).map(cleanDestination).filter(Boolean);
+  const knownPlace = /^(?:vivero|(?:la\s+)?california|portuguesa|cop|c\.o\.p\.|centro operativo(?:\s*\(cop\))?|taller|cocina|comedor|plantaci[oó]n)$/i;
+  if (members.length > 1 && members.some(member => knownPlace.test(member))
+    && members.every(member => /^\d+[a-z]?$/i.test(member) || knownPlace.test(member))) {
+    const parts = [...new Set(members.map(canonicalDestination))]
+      .sort((a, b) => Number(!/^\d/.test(a)) - Number(!/^\d/.test(b)) || a.localeCompare(b, 'es', { numeric: true }));
+    return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} y ${parts.at(-1)}`;
+  }
   // Keep the lot identifiers, not the agricultural task or a trailing description.
   // A joint delivery stays in ONE joint group: never duplicate/split its cost.
   const codes = /^(\d+[a-z]?(?:\s*(?:,|\/|&|\by\b)\s*(?:lotes?\s+)?\d+[a-z]?)*)(?=$|[\s;:.(\-])/i.exec(clean)?.[1];
   if (codes) {
+    // Do not silently discard a named/qualified destination we cannot canonicalize.
+    if (/^\s*(?:,|\/|&|\by\b)/i.test(clean.slice(codes.length))) return clean;
     const parts = [...new Set((codes.match(/\d+[a-z]?/gi) ?? []).map((code) => code.replace(/^0+(?=\d)/, '').toUpperCase()))]
       .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
     return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} y ${parts.at(-1)}` : parts[0];
@@ -171,10 +182,11 @@ export function destinationLotOf(source: MonthlyActivitySource) {
     && (usesPersonalDestination(source.module)
       || isPersonalAseoProduct(source.module, source.code ?? '')
       || isSupervisorExit(source))) return PERSONAL_DESTINATION;
-  if (isConfirmedCopFuelWork(source)) return COP_DESTINATION;
-  if (isConfirmedCopOperationalWork(source)) return COP_DESTINATION;
   const readDestination = (value: string) => isStorageFloorDestination(value) ? '' : canonicalDestination(value);
   const explicit = readDestination(source.destinationLot ?? '');
+  if (explicit) return explicit;
+  if (isConfirmedCopFuelWork(source)) return COP_DESTINATION;
+  if (isConfirmedCopOperationalWork(source)) return COP_DESTINATION;
   const destinationTexts = [source.observations, source.zone, source.labor, source.front];
   const fuelRoute = normalizeMovementText(source.module) === 'combustible'
     && (isRouteLabel(source.destinationLot) || destinationTexts.some(isRouteLabel));

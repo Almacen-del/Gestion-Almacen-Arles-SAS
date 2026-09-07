@@ -280,8 +280,11 @@ service cloud.firestore {
     // inventario. El acceso requiere autenticación + perfil activo + rol válido.
     match /existencias/{documentId} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser() && validStock(request.resource.data);
-      allow update: if isActiveUser() && validStock(request.resource.data) && preservesExistingFields();
+      allow create: if false;
+      // Quantities and history commit together through confirmarOperacionInventario.
+      allow update: if canManageInventory() && preservesExistingFields()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ubicacion'])
+        && request.resource.data.ubicacion is string && request.resource.data.ubicacion.size() > 0;
       allow delete: if false;
     }
 
@@ -312,7 +315,7 @@ service cloud.firestore {
 
     match /movimientos/{document=**} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser() && validNewMovement(request.resource.data);
+      allow create: if false;
       // Identical retries are harmless; edits and deletes require a separate,
       // audited administrative correction, not an ordinary client write.
       allow update: if isActiveUser()
@@ -322,15 +325,16 @@ service cloud.firestore {
 
     match /productos_aseo/{document=**} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser() && validStock(request.resource.data);
-      allow update: if isActiveUser() && validStock(request.resource.data) && preservesExistingFields();
+      allow create, update: if false;
       allow delete: if false;
     }
 
     match /herramientas/{document=**} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser() && validToolStock(request.resource.data);
-      allow update: if isActiveUser() && validToolStock(request.resource.data) && preservesExistingFields();
+      allow create: if false;
+      allow update: if canManageInventory() && preservesExistingFields()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado'])
+        && request.resource.data.estado in ['Bueno', 'Mantenimiento'];
       allow delete: if false;
     }
 
@@ -353,7 +357,7 @@ service cloud.firestore {
 
     match /entradas_stock/{document=**} {
       allow read: if isActiveUser();
-      allow create: if isActiveUser() && validNewMovement(request.resource.data);
+      allow create: if false;
       allow update: if isActiveUser()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([]);
       allow delete: if false;
@@ -369,6 +373,11 @@ service cloud.firestore {
     }
 
     match /{parentPath=**}/asignaciones_entradas_agroquimicos/{entryId} {
+      allow read: if isActiveUser();
+      allow write: if false;
+    }
+
+    match /operaciones_inventario/{operationId} {
       allow read: if isActiveUser();
       allow write: if false;
     }

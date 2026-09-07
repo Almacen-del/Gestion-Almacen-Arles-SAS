@@ -62,14 +62,14 @@ describe('Catálogo: permiso limitado y compatibilidad móvil', () => {
     await assertFails(setDoc(doc(db, 'catalogo_personalizado/P1/privado/extra'), {dato: 1}));
     await assertFails(setDoc(doc(db, 'otra_coleccion/extra'), {dato: 1}));
   });
-  it('una entrada de operador funciona al no reescribir la ficha existente', async () => {
+  it('la entrada requiere servidor incluso sin reescribir la ficha existente', async () => {
     const db = dbFor(), product = doc(db, 'existencias/P1');
-    await assertSucceeds(runTransaction(db, async transaction => {
+    await assertFails(runTransaction(db, async transaction => {
       const before = (await transaction.get(product)).data()!.cantidad;
       transaction.set(product, {cantidad: before + 3.5, stock_actual: before + 3.5}, {merge: true});
       transaction.set(doc(db, 'movimientos/entrada-operador'), {tipo: 'Entrada', cantidad: 3.5, producto_id: 'P1'});
     }));
-    expect((await getDoc(product)).data()!.cantidad).toBe(13.5);
+    expect((await getDoc(product)).data()!.cantidad).toBe(10);
     expect((await getDoc(doc(db, 'catalogo_personalizado/P1'))).data()!.item).toBe('Guantes');
   });
   it('reproduce la denegación del cliente antiguo sin escrituras parciales', async () => {
@@ -81,11 +81,11 @@ describe('Catálogo: permiso limitado y compatibilidad móvil', () => {
     expect((await getDoc(doc(db, 'existencias/P1'))).data()!.cantidad).toBe(10);
     expect((await getDoc(doc(db, 'movimientos/entrada-antigua'))).exists()).toBe(false);
   });
-  it('permite crear producto y ficha atómicamente para gestión', async () => {
+  it('también gestión debe crear las existencias mediante el servidor', async () => {
     const db = dbFor('warehouse'), batch = writeBatch(db);
     const product = {...card, codigo_interno: 'P2', documento_id: 'P2', producto_id: 'P2', cantidad: 0, stock_actual: 0};
     batch.set(doc(db, 'existencias/P2'), product);
     batch.set(doc(db, 'catalogo_personalizado/P2'), product);
-    await assertSucceeds(batch.commit());
+    await assertFails(batch.commit());
   });
 });

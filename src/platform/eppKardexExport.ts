@@ -74,29 +74,38 @@ function replaceOrAppendRow(sheet: string, row: string, index: number) {
   return sheet.replace(close, `${row}$&`);
 }
 
-function lastRecordedRow(sheet: string) {
+function dataRows(sheet: string) {
   const rows = parseSheetRows(sheet);
   const dated = rows.map((row) => {
     const number = /<\/?(?:x:)?c\b[^>]*\br="A\d+"[^>]*>[\s\S]*?<\/?(?:x:)?v>(\d+(?:\.\d+)?)<\/?(?:x:)?v>/.exec(row)?.[1];
     return number ? { row, dateSerial: Number(number) } : null;
   }).filter((value): value is { row: string; dateSerial: number } => Boolean(value));
   if (!dated.length) throw new Error('La plantilla KARDEX EPP no tiene movimientos fechados.');
-  return {
-    baselineDateSerial: Math.max(...dated.map((item) => item.dateSerial)),
-    row: dated.reduce((last, current) => rowNumber(current.row) > rowNumber(last.row) ? current : last).row,
-  };
+  return dated;
 }
 
-function movementRows(rows: readonly FilaMovimientoExcel[], kind: 'entry' | 'exit', afterSerial: number): KardexRow[] {
+function cleanDataArea(sheet: string) {
+  const historicalRows = dataRows(sheet);
+  const historicalStartRow = Math.min(...historicalRows.map(({ row }) => rowNumber(row)));
+  // Las fórmulas del resumen comienzan en la fila 2; la fila 1 no debe recibir movimientos.
+  const firstDataRow = Math.max(2, historicalStartRow);
+  const seedRow = historicalRows.find(({ row }) => rowNumber(row) === historicalStartRow)?.row;
+  if (!seedRow) throw new Error('La plantilla KARDEX EPP no tiene una fila de formato para sus movimientos.');
+  const cleanedSheet = sheet.replace(/<(?:x:)?row\b[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/(?:x:)?row>/g,
+    (row, index: string) => Number(index) >= historicalStartRow ? '' : row);
+  return { cleanedSheet, firstDataRow, seedRow };
+}
+
+function movementRows(rows: readonly FilaMovimientoExcel[], kind: 'entry' | 'exit'): KardexRow[] {
   const quantityField = kind === 'entry' ? 'cantidad_entrada' : 'cantidad_salida';
   const invalid = rows.filter((row) => row[quantityField] > 0 && !parseOperationalDate(row.fecha));
   if (invalid.length) throw new Error(`Hay ${invalid.length} movimiento(s) EPP sin fecha válida. Corrígelos antes de exportar el Kardex.`);
   return rows.flatMap((row) => {
     const date = parseOperationalDate(row.fecha);
     const quantity = row[quantityField];
-    if (!date || !Number.isFinite(quantity) || quantity <= 0 || excelDate(date) <= afterSerial) return [];
+    if (!date || !Number.isFinite(quantity) || quantity <= 0) return [];
     if (!row.codigo.trim() || !row.nombre_producto.trim()) {
-      throw new Error(`Hay un movimiento EPP posterior al Kardex sin código o descripción. Corrígelo antes de exportar.`);
+      throw new Error(`Hay un movimiento EPP sin código o descripción. Corrígelo antes de exportar.`);
     }
     return [{
       date, dateSerial: excelDate(date), code: row.codigo.trim(), item: row.nombre_producto.trim(),
@@ -140,21 +149,19 @@ export async function fillEppKardexTemplate(
     throw new Error('El archivo descargado no es la plantilla de Kardex EPP esperada.');
   }
 
-  const lastExit = lastRecordedRow(outputSheet);
-  const lastEntry = lastRecordedRow(inputSheet);
-  const baseline = Math.max(lastExit.baselineDateSerial, lastEntry.baselineDateSerial);
-  const nextEntries = movementRows(entradas, 'entry', baseline);
-  const nextExits = movementRows(salidas, 'exit', baseline);
-  if (!nextEntries.length && !nextExits.length) {
-    throw new Error('No hay movimientos EPP posteriores a la última fecha del Kardex para los filtros activos.');
-  }
-  if (rowNumber(lastExit.row) + nextExits.length > ROW_LIMIT || rowNumber(lastEntry.row) + nextEntries.length > ROW_LIMIT) {
+  const exitArea = cleanDataArea(outputSheet);
+  const entryArea = cleanDataArea(inputSheet);
+  outputSheet = exitArea.cleanedSheet;
+  inputSheet = entryArea.cleanedSheet;
+  const nextEntries = movementRows(entradas, 'entry');
+  const nextExits = movementRows(salidas, 'exit');
+  if (exitArea.firstDataRow + nextExits.length - 1 > ROW_LIMIT || entryArea.firstDataRow + nextEntries.length - 1 > ROW_LIMIT) {
     throw new Error('El Kardex supera el límite de filas de Excel.');
   }
 
   nextExits.forEach((item, offset) => {
-    const index = rowNumber(lastExit.row) + offset + 1;
-    let row = moveRow(lastExit.row, index);
+    const index = exitArea.firstDataRow + offset;
+    let row = moveRow(exitArea.seedRow, index);
     row = setCell(row, 'A', index, item.dateSerial);
     row = setCell(row, 'B', index, item.code);
     row = setCell(row, 'C', index, item.item);
@@ -164,8 +171,8 @@ export async function fillEppKardexTemplate(
     outputSheet = replaceOrAppendRow(outputSheet, row, index);
   });
   nextEntries.forEach((item, offset) => {
-    const index = rowNumber(lastEntry.row) + offset + 1;
-    let row = moveRow(lastEntry.row, index);
+    const index = entryArea.firstDataRow + offset;
+    let row = moveRow(entryArea.seedRow, index);
     row = setCell(row, 'A', index, item.dateSerial);
     row = setCell(row, 'B', index, item.code);
     row = setCell(row, 'C', index, item.item);
@@ -176,8 +183,8 @@ export async function fillEppKardexTemplate(
 
   summarySheet = updateFormulaRanges(
     summarySheet,
-    rowNumber(lastExit.row) + nextExits.length,
-    rowNumber(lastEntry.row) + nextEntries.length,
+    exitArea.firstDataRow + nextExits.length - 1,
+    entryArea.firstDataRow + nextEntries.length - 1,
   );
   workbook = markForRecalculation(workbook);
   zip.file(OUTPUT_SHEET, outputSheet);

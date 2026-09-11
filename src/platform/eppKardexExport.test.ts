@@ -23,7 +23,7 @@ async function generate(entradas: FilaMovimientoExcel[], salidas: FilaMovimiento
 }
 
 describe('Kardex EPP sobre formato existente', () => {
-  it('conserva el histórico y añade R.E/R.S después de la última fecha registrada', async () => {
+  it('elimina los datos históricos y carga únicamente los movimientos recibidos de Firestore', async () => {
     const entry = row({ fecha: '2026-08-01', tipo_movimiento: 'Entrada', codigo: 'PC04', nombre_producto: 'DELANTAL DE CARNAZA T UNICA', unidad: 'Unidad', cantidad: 4, cantidad_entrada: 4, cantidad_salida: 0, responsable: '' });
     const exit = row({ fecha: '2026-08-03', codigo: 'PC01', nombre_producto: 'CANILLERA CORTA', unidad: 'Par', cantidad: 2, cantidad_salida: 2 });
     const { original, bytes } = await generate([entry], [exit]);
@@ -32,15 +32,15 @@ describe('Kardex EPP sobre formato existente', () => {
     expect(await after.file('xl/workbook.xml')!.async('string')).toContain('name="R.S"');
     const rs = await after.file('xl/worksheets/sheet2.xml')!.async('string');
     const re = await after.file('xl/worksheets/sheet3.xml')!.async('string');
-    expect(rs).toContain('<x:c r="A746" s="89" t="n"><x:v>46234</x:v>');
-    expect(rs).toContain('<x:c r="A747" s="89"><x:v>46237</x:v>');
+    expect(rs).not.toContain('<x:v>46234</x:v>');
+    expect(rs).toContain('<x:c r="A2" s="72"><x:v>46237</x:v>');
     expect(rs).toContain('<x:t xml:space="preserve">PC01</x:t>');
     expect(rs).toContain('<x:t xml:space="preserve">Felipe Estrada</x:t>');
-    expect(rs).toContain('<x:c r="F747" s="90"><x:v>2</x:v>');
-    expect(re).toContain('<x:c r="A107" s="91" t="n"><x:v>46213</x:v>');
-    expect(re).toContain('<x:c r="A108" s="91"><x:v>46235</x:v>');
+    expect(rs).toContain('<x:c r="F2" s="72"><x:v>2</x:v>');
+    expect(re).not.toContain('<x:v>46213</x:v>');
+    expect(re).toContain('<x:c r="A2" s="50"><x:v>46235</x:v>');
     expect(re).toContain('<x:t xml:space="preserve">DELANTAL DE CARNAZA T UNICA</x:t>');
-    expect(re).toContain('<x:c r="E108" s="92"><x:v>4</x:v>');
+    expect(re).toContain('<x:c r="E2" s="50"><x:v>4</x:v>');
     expect(await after.file('xl/workbook.xml')!.async('string')).toContain('fullCalcOnLoad="1"');
     const changed = ['xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml', 'xl/worksheets/sheet3.xml', 'xl/workbook.xml'];
     expect(Object.keys(after.files).filter((key) => !after.files[key].dir).sort()).toEqual(Object.keys(before.files).filter((key) => !before.files[key].dir).sort());
@@ -49,9 +49,11 @@ describe('Kardex EPP sobre formato existente', () => {
     }
   });
 
-  it('no agrega movimientos ya cubiertos por la última fecha del Kardex', async () => {
+  it('incluye movimientos anteriores aunque la plantilla tuviera un histórico posterior', async () => {
     const prior = row({ fecha: '2026-07-31' });
-    await expect(generate([], [prior])).rejects.toThrow('No hay movimientos EPP posteriores');
+    const { bytes } = await generate([], [prior]);
+    const zip = await JSZip.loadAsync(bytes);
+    expect(await zip.file('xl/worksheets/sheet2.xml')!.async('string')).toContain('<x:c r="A2" s="72"><x:v>46234</x:v>');
   });
 
   it('detiene la exportación si un movimiento EPP tiene fecha inválida', async () => {
@@ -59,8 +61,8 @@ describe('Kardex EPP sobre formato existente', () => {
   });
 
   it('extiende los rangos de cálculo si supera la capacidad visible de la plantilla', async () => {
-    const entradas = Array.from({ length: 788 }, () => row({ fecha: '2026-08-01', tipo_movimiento: 'Entrada', cantidad: 1, cantidad_entrada: 1, cantidad_salida: 0 }));
-    const salidas = Array.from({ length: 202 }, () => row({ fecha: '2026-08-02', cantidad: 1, cantidad_salida: 1 }));
+    const entradas = Array.from({ length: 894 }, () => row({ fecha: '2026-08-01', tipo_movimiento: 'Entrada', cantidad: 1, cantidad_entrada: 1, cantidad_salida: 0 }));
+    const salidas = Array.from({ length: 947 }, () => row({ fecha: '2026-08-02', cantidad: 1, cantidad_salida: 1 }));
     const { bytes } = await generate(entradas, salidas);
     const zip = await JSZip.loadAsync(bytes);
     const summary = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
@@ -68,5 +70,5 @@ describe('Kardex EPP sobre formato existente', () => {
     expect(summary).toContain("'R.S'!$F$2:$F$948");
     expect(summary).toContain("'R.E'!$E$2:$E$895");
     expect(summary).toContain("'R.E'!$B$2:$B$895");
-  });
+  }, 20_000);
 });

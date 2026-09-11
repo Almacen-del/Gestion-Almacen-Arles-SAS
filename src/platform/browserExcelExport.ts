@@ -237,6 +237,10 @@ export async function generarReporteMovimientosExcelWeb(payload: ReporteMovimien
     const { exportFuelTemplate } = await import('./fuelTemplateExport');
     return exportFuelTemplate(payload.fuelDeliveryRows);
   }
+  if (payload.moduleName.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s/g, '') === 'epp') {
+    const { exportEppKardexTemplate } = await import('./eppKardexExport');
+    return exportEppKardexTemplate(payload.entradasGenerales, payload.salidasGenerales);
+  }
   const workbook = new ExcelJS.Workbook();
   workbook.creator = payload.generatedBy;
   workbook.company = payload.companyName;

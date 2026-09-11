@@ -939,7 +939,8 @@ export function crearReporteMovimientos(opciones: {
     title: 'REPORTE DE MOVIMIENTOS DE INVENTARIO',
     moduleName: opciones.moduleName,
     suggestedFileName: coincideModulo(opciones.moduleName, 'Combustible')
-      ? 'GA-F-006_Control_Combustible.xlsx' : nombreArchivoReporte(opciones.moduleName),
+      ? 'GA-F-006_Control_Combustible.xlsx'
+      : coincideModulo(opciones.moduleName, 'EPP') ? 'KARDEX_EPP_ARLES.xlsx' : nombreArchivoReporte(opciones.moduleName),
     ...(coincideModulo(opciones.moduleName, 'Combustible') ? {
       fuelDeliveryRows: createFuelDeliveryRows(movimientosVisibles, opciones.usuarios),
     } : {}),

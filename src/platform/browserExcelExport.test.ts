@@ -1,7 +1,7 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import ExcelJS from 'exceljs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AgrochemicalLot } from '../agrochemicalLots';
 import { crearReporteMovimientos, leerLotesSalidaReporte, type MovimientoParaReporte } from '../reporteMovimientosExcel';
 import { modules } from '../theme';
@@ -47,6 +47,27 @@ async function exportar(
 }
 
 describe('Excel uniforme de los módulos', () => {
+  it('usa el Kardex EPP existente y no las hojas genéricas', async () => {
+    const template = await readFile('public/templates/KARDEX-EPP.xlsx');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => template });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const entrada = movimiento({ modulo: 'EPP', fecha: '2026-08-01', codigo: 'PC04', descripcion: 'DELANTAL DE CARNAZA T UNICA', cantidad: 4, unidad: 'Unidad' });
+      const salida = movimiento({ ...entrada, id: 'salida-epp', tipo: 'Salida', fecha: '2026-08-03', codigo: 'PC01', descripcion: 'CANILLERA CORTA', cantidad: 2, unidad: 'Par' });
+      const payload = crearReporteMovimientos({
+        moduleName: 'EPP', movimientos: [entrada, salida], historialCompleto: [entrada, salida],
+        inventarioActual: [], lotesAgroquimicos: [], usuarios: {}, periodLabel: '', exportDate: '', generatedBy: '', coverageLabel: '',
+      });
+      const bytes = await generarReporteMovimientosExcelWeb(payload);
+      expect(fetchMock).toHaveBeenCalledWith('/templates/KARDEX-EPP.xlsx');
+      const zip = await (await import('jszip')).default.loadAsync(bytes);
+      expect(await zip.file('xl/workbook.xml')!.async('string')).toContain('name="R.E"');
+      expect(await zip.file('xl/workbook.xml')!.async('string')).not.toContain('Movimientos generales');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('solo exporta lote y responsable, sin notas históricas, horas ni cargos', async () => {
     const entrada = movimiento({ solicitante: 'Ana Pérez', cargo: 'Operadora' });
     const salida = movimiento({ id: 'salida', tipo: 'Salida', solicitante: 'Ana Pérez', cantidad: 1000 });
@@ -69,7 +90,7 @@ describe('Excel uniforme de los módulos', () => {
     expect(etiquetas.wb.getWorksheet('Entradas')!.getCell('G8').value).toBe('Lote: 28 · Resp.: Juan Pérez');
   });
 
-  it.each(modules.slice(2).filter(modulo => modulo !== 'Combustible'))('exporta %s con las columnas exactas y el mismo estilo en todas las hojas', async (modulo) => {
+  it.each(modules.slice(2).filter(modulo => modulo !== 'Combustible' && modulo !== 'EPP'))('exporta %s con las columnas exactas y el mismo estilo en todas las hojas', async (modulo) => {
     const { wb } = await exportar(modulo);
     const esperadas = modulo === 'Agroquimicos' ? [...columnas, 'Lote', 'Fecha de vencimiento'] : columnas;
     expect(wb.worksheets.length).toBeGreaterThanOrEqual(4);
@@ -217,7 +238,7 @@ describe('Excel uniforme de los módulos', () => {
   it('no suma unidades incompatibles ni inventa fechas de productos sin movimientos', async () => {
     const mezcla = await exportar('Agroquimicos', [movimiento(), movimiento({ id: 'otra', unidad: 'ML' })]);
     expect(mezcla.wb.getWorksheet('Entradas')!.getCell('A10').value).toContain('unidades diferentes');
-    const vacio = await exportar('EPP', []);
+    const vacio = await exportar('ASEO', []);
     expect(vacio.wb.getWorksheet('Movimientos generales')!.getCell('A8').value).toContain('Sin registros');
     expect(vacio.wb.getWorksheet('Consolidado por producto')!.getCell('E8').value).toBeNull();
     expect(vacio.wb.getWorksheet('Consolidado por producto')!.getCell('F8').value).toBeNull();

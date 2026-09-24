@@ -25,3 +25,8 @@ describe('Supabase web boundary',()=>{
     expect(signInWithPassword).not.toHaveBeenCalled();
   });
 });
+
+it('explains pending email confirmation without exposing service details',async()=>{
+ const client={auth:{signInWithPassword:vi.fn().mockResolvedValue({data:{session:null},error:{code:'email_not_confirmed',message:'private'}})}} as unknown as SupabaseClient;
+ await expect(signInToWeb(client,'pending@arlessas.com','password')).rejects.toThrow('Confirma tu correo');
+});

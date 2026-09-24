@@ -1063,7 +1063,7 @@ function LoginScreen({
 const APPROVABLE_ROLES = ['operador', 'almacenista', 'administrador'] as const;
 const EDITABLE_USER_STATES = ['activo', 'inactivo'] as const;
 
-function PendingUsersPanel({
+export function PendingUsersPanel({
   users,
   onClose,
   onSave,
@@ -1080,16 +1080,16 @@ function PendingUsersPanel({
   const [error, setError] = useState('');
 
   async function save(profile: UserProfile) {
-    const role = selectedRoles[profile.id] || 'operador';
-    const name = names[profile.id]?.trim() || profile.email || profile.id;
+    const role = selectedRoles[profile.id] ?? profile.rol ?? 'operador';
+    const name = names[profile.id]?.trim() || profile.nombre || profile.email || profile.id;
     const jobTitle = jobTitles[profile.id]?.trim() || profile.cargo || '';
     const state = selectedStates[profile.id] || (profile.estado === 'pendiente' ? 'activo' : profile.estado || 'activo');
     setSavingId(profile.id);
     setError('');
     try {
       await onSave(profile, role, name, jobTitle, state);
-    } catch {
-      setError(`No se pudo guardar ${profile.email || profile.id}. Verifica los permisos y la conexión.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : `No se pudo guardar ${profile.email || profile.id}. Verifica los permisos y la conexión.`);
     } finally {
       setSavingId('');
     }

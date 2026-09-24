@@ -34,6 +34,7 @@ export async function signInToWeb(client: SupabaseClient,email: string,password:
   const normalized=email.trim().toLowerCase();
   if(!/^[^\s@]+@arlessas\.com$/.test(normalized) || !password) throw new Error('Ingresa tu correo corporativo y contraseña.');
   const {data,error}=await client.auth.signInWithPassword({email:normalized,password});
+  if(error?.code==='email_not_confirmed')throw new Error('Confirma tu correo antes de ingresar. Revisa también la carpeta de spam o reenvía la confirmación.');
   if(error || !data.session) throw new Error('No se pudo iniciar sesión. Verifica el correo y la contraseña.');
   return data.session;
 }

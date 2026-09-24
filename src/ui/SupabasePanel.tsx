@@ -58,7 +58,13 @@ export default function SupabasePanel({client:provided}:{client?:SupabaseClient}
   },[client,session?.user.id,attempt]);
   const refresh=useCallback(async()=>{await refreshAction.current();},[]);
   async function logout(){const result=await client.auth.signOut({scope:'local'});if(result.error)setError('No se pudo cerrar la sesión.');else {setSession(null);setData(null);}}
-  async function login(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{if(register){if(!/^[^\s@]+@arlessas\.com$/.test(email.trim().toLowerCase()))throw Error('Usa tu correo corporativo.');const result=await client.auth.signUp({email:email.trim().toLowerCase(),password,options:{data:{display_name:name,job_title:job}}});if(result.error)throw Error('No se pudo crear la cuenta. Revisa tus datos.');setError('Confirma tu correo e ingresa para solicitar acceso.');setRegister(false);}else await signInToWeb(client,email,password);setPassword('');}catch(e){setError(e instanceof Error?e.message:'No se pudo ingresar.');}finally{setBusy(false);}}
+  async function login(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{if(register){if(!/^[^\s@]+@arlessas\.com$/.test(email.trim().toLowerCase()))throw Error('Usa tu correo corporativo.');const result=await client.auth.signUp({email:email.trim().toLowerCase(),password,options:{emailRedirectTo:window.location.origin,data:{display_name:name,job_title:job}}});if(result.error)throw Error('No se pudo crear la cuenta. Revisa tus datos.');setError('Cuenta creada. Confirma tu correo y espera la aprobación del administrador.');setRegister(false);}else await signInToWeb(client,email,password);setPassword('');}catch(e){setError(e instanceof Error?e.message:'No se pudo ingresar.');}finally{setBusy(false);}}
+  async function resendConfirmation(){
+    if(!/^[^\s@]+@arlessas\.com$/.test(email.trim().toLowerCase())){setError('Escribe primero tu correo corporativo.');return;}
+    setBusy(true);try{const {error}=await client.auth.resend({type:'signup',email:email.trim().toLowerCase(),options:{emailRedirectTo:window.location.origin}});
+      setError(error?'No se pudo reenviar. Espera unos minutos o consulta al administrador.':'Si la cuenta tiene una confirmación pendiente, recibirás un correo. Revisa también spam.');
+    }catch{setError('No se pudo reenviar. Revisa la conexión.');}finally{setBusy(false);}
+  }
   async function requestAccess(e:FormEvent){e.preventDefault();setBusy(true);try{const {error}=await client.rpc('web_request_access',{p_name:name,p_job:job});if(error)throw Error('No se pudo solicitar acceso. Confirma primero el correo.');setError('Solicitud enviada. Un administrador debe aprobarla.');}catch(e){setError(e instanceof Error?e.message:'Error de solicitud.');}finally{setBusy(false);}}
   if(checking)return <main className="loading-screen">Verificando sesión…</main>;
   if(!session)return <main className="login-panel"><h1>Almacén Arles</h1><p>Panel web · Supabase</p><form className="login-form" onSubmit={login}>
@@ -66,6 +72,7 @@ export default function SupabasePanel({client:provided}:{client?:SupabaseClient}
     <label>Correo<input type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)}/></label>
     <label>Contraseña<input type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)}/></label>
     {error&&<p role="alert">{error}</p>}<button disabled={busy}>{register?'Crear cuenta':'Ingresar'}</button><button type="button" disabled={busy} onClick={()=>setRegister(!register)}>{register?'Volver al ingreso':'Solicitar una cuenta'}</button>
+  {!register&&<button type="button" disabled={busy} onClick={()=>void resendConfirmation()}>Reenviar confirmación</button>}
   </form></main>;
   if(!data)return <main className="loading-screen"><p role={error?'alert':'status'}>{error||'Cargando inventario e historial…'}</p>
     {!busy&&<><button onClick={()=>setAttempt(n=>n+1)}>Reintentar</button><form onSubmit={requestAccess}><label>Nombre<input required maxLength={160} value={name} onChange={e=>setName(e.target.value)}/></label><label>Cargo<input maxLength={160} value={job} onChange={e=>setJob(e.target.value)}/></label><button>Solicitar acceso al panel</button></form></>}<button onClick={()=>void logout()}>Cerrar sesión</button></main>;

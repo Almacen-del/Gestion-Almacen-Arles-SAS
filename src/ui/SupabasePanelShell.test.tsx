@@ -2,7 +2,7 @@
 import {render,screen,fireEvent,cleanup} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
 import type {User} from 'firebase/auth';
-import {AppShell} from '../App';
+import {AppShell,PendingUsersPanel} from '../App';
 import {parsePanelSnapshot} from '../backend/supabase/panel';
 const mocks=vi.hoisted(()=>({snapshot:vi.fn(),query:vi.fn(),write:vi.fn()}));
 vi.mock('../firebase',()=>({db:{},auth:{},firebaseApp:{},firebaseProjectId:'demo'}));
@@ -17,4 +17,12 @@ it('reuses the existing module navigation and tables without starting Firebase r
  await screen.findByText('Gafas reales');
  expect(mocks.snapshot).not.toHaveBeenCalled();expect(mocks.query).not.toHaveBeenCalled();expect(mocks.write).not.toHaveBeenCalled();
  expect(screen.getByRole('button',{name:'Salir'})).toBeTruthy();
+});
+
+it('preserves the displayed role and name when saving an existing profile',async()=>{
+ const profile={id:'owner',nombre:'Almacén',email:'almacen@arlessas.com',rol:'admin',cargo:'Almacén',estado:'activo',activo:true};
+ const save=vi.fn(async()=>{});
+ render(<PendingUsersPanel users={[profile]} onClose={vi.fn()} onSave={save}/>);
+ fireEvent.click(screen.getByRole('button',{name:/^Guardar$/}));
+ expect(save).toHaveBeenCalledWith(profile,'admin','Almacén','Almacén','activo');
 });

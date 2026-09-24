@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { colombiaDateTime } from '../backend/supabase/climate';
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
@@ -19,20 +19,20 @@ it('loads date ranges and shows real history without legacy location arguments',
   await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('climate_dashboard', { p_from: '2024-02-01', p_to: '2024-02-29' }));
   expect(screen.queryByText('Operador de prueba')).toBeNull();
 });
-it('previews out-of-range products before saving, and saves one idempotent reading', async () => {
+it('shows independent temperature and humidity results without web capture controls', async () => {
+  rpc.mockResolvedValue({ data: { ...dashboard, readings: [{ ...reading, temperature_c: 26, humidity_percent: 95 }] }, error: null });
   render(<AgrochemicalClimateModal onClose={vi.fn()} />);
-  await screen.findByText('Nueva medición');
-  fireEvent.change(screen.getByLabelText('Temperatura (°C)'), { target: { value: '33' } });
-  fireEvent.change(screen.getByLabelText('Humedad relativa (%)'), { target: { value: '79' } });
-  expect(screen.getByText('Temperatura superior a 32 °C')).toBeTruthy();
-  expect(rpc).toHaveBeenCalledTimes(1);
-  rpc.mockImplementation((name: string) => Promise.resolve(name === 'climate_web_record_reading' ? { data: null, error: { code: 'NETWORK' } } : { data: dashboard, error: null }));
-  fireEvent.click(screen.getByText('Guardar medición'));
-  await screen.findByRole('alert');
-  const first = rpc.mock.calls.find(c => c[0] === 'climate_web_record_reading')![1];
-  fireEvent.click(screen.getByText('Guardar medición'));
-  await waitFor(() => expect(rpc.mock.calls.filter(c => c[0] === 'climate_web_record_reading')).toHaveLength(2));
-  expect(rpc.mock.calls.filter(c => c[0] === 'climate_web_record_reading')[1][1].p_id).toBe(first.p_id);
+  await screen.findByText('Operador de prueba');
+  expect(screen.queryByText('Nueva medición')).toBeNull();
+  expect(screen.queryByText('Guardar medición')).toBeNull();
+  const temperature = screen.getByRole('region', { name: 'Evaluación de temperatura' });
+  const humidity = screen.getByRole('region', { name: 'Evaluación de humedad' });
+  expect(within(temperature).getAllByText('Dentro de límites de la ficha')).toHaveLength(2);
+  expect(within(temperature).queryByText('Humedad superior a 78 %')).toBeNull();
+  expect(within(humidity).getByText('Humedad superior a 78 %')).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: 'Evaluación temperatura' })).toBeTruthy();
+  expect(screen.getByRole('columnheader', { name: 'Evaluación humedad' })).toBeTruthy();
+  expect(rpc.mock.calls.every(c => c[0] === 'climate_dashboard')).toBe(true);
 });
 it('preserves history after transient failure but removes it after permission denial', async () => {
   render(<AgrochemicalClimateModal onClose={vi.fn()} />); await screen.findByText('Operador de prueba');

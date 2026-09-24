@@ -45,6 +45,11 @@
 .climate-table th, .climate-table td { padding: 10px; text-align: left; border-bottom: 1px solid #dce7de; }
 .climate-table th { background: #edf5ee; }
 .climate-error { padding: 12px; background: #fff0e9; color: #943a21; border-radius: 8px; }
+.climate-separated { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; margin-top: 18px; }
+.climate-separated > section { min-width: 0; }
+.climate-separated .climate-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.climate-separated .climate-product summary { align-items: start; flex-direction: column; }
+@media (max-width: 750px) { .climate-separated { grid-template-columns: 1fr; } }
 .climate-product-history { margin-top: 12px; }
 .climate-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: .75rem; margin-bottom: 12px; }
 .climate-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }

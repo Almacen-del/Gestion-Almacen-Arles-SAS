@@ -2,6 +2,19 @@ export type ClimateRule = { code: string; name: string; page: number; group: str
 export type ClimateReference = { t_min: number; t_max: number; h_max: number; note: string; sources: { title: string; url: string }[] };
 export type ClimateCriteria = { version: string; source: string; sha256: string; rules: ClimateRule[]; reference: ClimateReference | null };
 export type ClimateStatus = 'outside' | 'within' | 'reference' | 'unknown';
+export type ClimateMetric = 'temperature' | 'humidity';
+export function evaluateClimateParameter(rule: ClimateRule, value: number, reference: ClimateReference | null, metric: ClimateMetric) {
+  const reasons: string[] = [];
+  if (!Number.isFinite(value)) return { status: 'unknown' as ClimateStatus, reasons: ['Falta una medición válida'] };
+  const temperature = metric === 'temperature';
+  const specific = temperature ? rule.t_min !== null || rule.t_max !== null : rule.h_max !== null;
+  const min = temperature ? (specific ? rule.t_min : reference?.t_min ?? null) : null;
+  const max = temperature ? (specific ? rule.t_max : reference?.t_max ?? null) : rule.h_max ?? reference?.h_max ?? null;
+  if (min !== null && value < min) reasons.push(`Temperatura inferior a ${min} °C${specific ? '' : ' (referencia)'}`);
+  if (max !== null && (temperature || specific ? value > max : value >= max)) reasons.push(temperature ? `Temperatura superior a ${max} °C${specific ? '' : ' (referencia)'}` : `Humedad ${specific ? 'superior a' : 'igual o superior a'} ${max} %${specific ? '' : ' (referencia)'}`);
+  const status: ClimateStatus = reasons.length ? 'outside' : specific && !rule.unconfirmed ? 'within' : reference ? 'reference' : 'unknown';
+  return { status, reasons };
+}
 export type ClimateReading = { id: string; period: 'AM' | 'PM'; reading_date: string; temperature_c: number; humidity_percent: number; measured_at: string; responsible_name: string; notes: string; criteria_version: string | null };
 export type ClimateDashboard = { criteria: ClimateCriteria[]; current_version: string; readings: ClimateReading[]; can_record: boolean };
 export const climateLabels: Record<ClimateStatus, string> = { outside: 'Fuera de criterio', within: 'Dentro de límites de la ficha', reference: 'Dentro de referencia orientativa', unknown: 'Criterio incompleto' };

@@ -1,6 +1,6 @@
 # Control ambiental de Bodega Azul
 
-En Agroquímicos → Temperatura y humedad, la web permite registrar una medición AM y una PM por fecha de Colombia. Administradores y gestores registran; lectores consultan. La aplicación Android conserva su RPC original y comparte el mismo historial.
+En Agroquímicos → Temperatura y humedad, la web consulta las mediciones AM y PM por fecha de Colombia. La captura se realiza exclusivamente desde el celular; no se ofrece formulario de registro en el panel. La aplicación Android conserva su RPC original y comparte el mismo historial.
 
 ## Criterios y alcance
 
@@ -17,13 +17,13 @@ Fuentes generales consultadas el 24/09/2026:
 - EPA, humedad en edificios <60 %: https://www.epa.gov/mold/brief-guide-mold-moisture-and-your-home
 - EPA, prioridad de instrucciones del producto: https://www.epa.gov/safepestcontrol/storing-pesticides-safely
 
-La evaluación distingue fuera de criterio, dentro de límites de la ficha, dentro de referencia orientativa y criterio incompleto. Describe condiciones ambientales del catálogo del PDF, no daño ni certificación de calidad, ni confirma existencias físicas por lectura. Las advertencias de formulación permanecen visibles al desplegar cada producto.
+Temperatura y humedad se evalúan de forma independiente en dos paneles, dos barras históricas y dos columnas de resultados. Una humedad fuera de criterio no cambia el estado de temperatura. Cada evaluación distingue fuera de criterio, dentro de límites de la ficha, dentro de referencia orientativa y criterio incompleto. Describe condiciones ambientales del catálogo del PDF, no daño ni certificación de calidad, ni confirma existencias físicas por lectura. Las advertencias de formulación permanecen visibles al desplegar cada producto.
 
 ## Historial y gráficos
 
 Gráficos semanales (lunes–domingo) y mensuales, todos los productos o uno, temperatura y humedad separadas, mínimos/promedios/máximos y barras de condiciones por registro. Los puntos son mediciones reales; no se rellenan faltantes ni se interpolan intervalos mayores a 18 horas. Tabla con responsable, observaciones, fecha y evaluación.
 
-Consulta al abrir, cambiar periodo, guardar o pulsar Actualizar registros; no recarga automática del formulario. Una falla transitoria conserva la consulta anterior con aviso; denegación de acceso la retira.
+Consulta al abrir, cambiar periodo o pulsar Actualizar registros; no recarga automática del formulario. Una falla transitoria conserva la consulta anterior con aviso; denegación de acceso la retira.
 
 ## Base de datos
 

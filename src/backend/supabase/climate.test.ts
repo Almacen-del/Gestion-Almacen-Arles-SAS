@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { climateRange, colombiaDateTime, evaluateClimate, criteriaForReading, type ClimateRule, type ClimateReading, type ClimateDashboard } from './climate';
+import { climateRange, colombiaDateTime, evaluateClimate, evaluateClimateParameter, criteriaForReading, type ClimateRule, type ClimateReading, type ClimateDashboard } from './climate';
 const rule: ClimateRule = { code: 'BIO006', name: 'NEMACYL', page: 1, group: '', temperature_text: '', humidity_text: '', details: '', t_min: null, t_max: 32, h_max: 78, unconfirmed: false };
 const reference = { t_min: 5, t_max: 30, h_max: 60, note: '', sources: [] };
 describe('environmental criteria', () => {
+  it('separates temperature compliance from humidity failure and vice versa', () => {
+    expect(evaluateClimateParameter(rule, 26, reference, 'temperature').status).toBe('within');
+    expect(evaluateClimateParameter(rule, 95, reference, 'humidity').status).toBe('outside');
+    expect(evaluateClimateParameter(rule, 33, reference, 'temperature').status).toBe('outside');
+    expect(evaluateClimateParameter(rule, 50, reference, 'humidity').status).toBe('within');
+    expect(evaluateClimateParameter({ ...rule, h_max: null }, 32, null, 'temperature').status).toBe('within');
+    expect(evaluateClimateParameter({ ...rule, h_max: null }, 50, null, 'humidity').status).toBe('unknown');
+    expect(evaluateClimateParameter({ ...rule, h_max: null }, 60, reference, 'humidity').status).toBe('outside');
+    expect(evaluateClimateParameter(rule, 78, reference, 'humidity').status).toBe('within');
+  });
   it('honors exact inclusive manufacturer limits instead of the stricter general reference', () => {
     expect(evaluateClimate(rule, 32, 78, reference).status).toBe('within');
     expect(evaluateClimate(rule, 32.1, 78, reference).status).toBe('outside');

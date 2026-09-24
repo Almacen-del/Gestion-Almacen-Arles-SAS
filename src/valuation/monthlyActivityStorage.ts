@@ -26,7 +26,7 @@ function canonical(row: MonthlyActivityRow) {
   return JSON.stringify(Object.entries(row).sort(([a], [b]) => a.localeCompare(b)));
 }
 
-function readRow(value: unknown): MonthlyActivityRow {
+export function readMonthlyActivityRow(value: unknown): MonthlyActivityRow {
   if (!value || typeof value !== 'object') throw new Error('Detalle mensual inválido.');
   const row = value as MonthlyActivityRow;
   const textKeys = ['id', 'occurredAt', 'moduleName', 'productId', 'code', 'product', 'reference', 'unit', 'destinationLot', 'recipientId', 'recipientName', 'priceUnit', 'issue'] as const;
@@ -44,7 +44,7 @@ function readRow(value: unknown): MonthlyActivityRow {
 export async function loadMonthlyActivity(metadata: MonthlyActivityMetadata, firestore = db): Promise<MonthlyActivitySnapshot> {
   const snapshot = await getDocsFromServer(activityCollection(metadata.period, firestore));
   const rows = snapshot.docs.map((record) => {
-    const row = readRow(record.data().detalle);
+    const row = readMonthlyActivityRow(record.data().detalle);
     if (row.id !== record.id) throw new Error('Identidad mensual inconsistente.');
     return row;
   });
@@ -74,6 +74,6 @@ export async function saveMonthlyActivity(snapshot: MonthlyActivitySnapshot, att
   const stored = await getDocsFromServer(source);
   const expected = new Map(snapshot.rows.map((row) => [row.id, canonical(row)]));
   if (stored.size !== expected.size || stored.docs.some((record) => (
-    record.data().intento_id !== attemptId || canonical(readRow(record.data().detalle)) !== expected.get(record.id)
+    record.data().intento_id !== attemptId || canonical(readMonthlyActivityRow(record.data().detalle)) !== expected.get(record.id)
   ))) throw new Error('No se pudo verificar el detalle de movimientos del corte.');
 }

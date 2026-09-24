@@ -50,14 +50,24 @@ Cuando la etiqueta solo informa mes y año, `fecha_vencimiento` se guarda como `
 
 ## Regla para la aplicación móvil
 
-Las salidas deben usar FEFO: primero vence, primero sale.
+La versión móvil con selector usa `registrarSalidaAgroquimicosPorLote`: el usuario elige
+un lote por línea y el servidor descuenta exclusivamente sus cantidades. Se puede agregar
+el mismo producto varias veces con lotes diferentes. La traza se guarda en `lotes_salida`
+y el método es `SELECCION_MANUAL`. No se pasa automáticamente a otro lote si falta saldo.
+La función FEFO anterior se mantiene para aplicaciones anteriores.
+
+Las salidas automáticas anteriores usan FEFO: primero vence, primero sale.
 
 1. Cargar los lotes del producto con `cantidad_disponible > 0`.
-2. Separar los lotes vencidos; no proponerlos para despacho.
-3. Ordenar los lotes vigentes por `fecha_vencimiento` ascendente y luego por `fecha_ingreso`.
+2. Incluir también lotes vencidos con cantidad disponible, conservando su fecha real y las alertas de vencimiento.
+3. Ordenar todos los lotes por `fecha_vencimiento` ascendente y luego por `fecha_ingreso`.
 4. Descontar la cantidad solicitada del primer lote; si no alcanza, continuar con el siguiente.
 5. Actualizar los lotes y `existencias/{productoId}.cantidad` en una sola transacción.
 6. Guardar en el movimiento móvil las asignaciones de lote utilizadas para conservar trazabilidad.
+
+Los lotes importados `HIST-KARDEX-*` pueden carecer de fecha de ingreso. El servidor
+conserva esa ausencia y ordena primero por vencimiento; en un empate, prioriza ingresos
+conocidos y finalmente el ID. No se modifica ni se inventa la fecha histórica.
 
 La función pura `allocateAgrochemicalExitFefo` en `src/agrochemicalLots.ts` define y prueba esa distribución, pero esta web no ejecuta el descuento.
 
@@ -72,7 +82,7 @@ Las entradas mantienen sus asignaciones de origen y el consolidado muestra los l
 
 ## Relación con obsolescencia
 
-- Lote vencido con existencias: bloqueado para salida y pendiente de revisión de obsolescencia.
+- Lote vencido con existencias: permite registrar salida y permanece identificado para revisión de obsolescencia. Registrar la salida no certifica aptitud para aplicación.
 - Lote a 30 días o menos: próximo a vencer.
 - Lote con más de 30 días: vigente.
 - Lote agotado: se conserva para trazabilidad, pero no participa en FEFO.

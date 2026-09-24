@@ -1,0 +1,8 @@
+.climate-modal { max-width: 1000px; }
+.climate-modal h2 { display: flex; align-items: center; gap: 8px; }
+.climate-modal select { display: block; margin-top: 8px; padding: 10px; max-width: 100%; }
+.climate-readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+.climate-readings article { min-width: 0; overflow-wrap: anywhere; }
+.climate-values { display: flex; gap: 28px; margin: 16px 0; font-size: 1.8rem; font-weight: 700; }
+.climate-values small { display: block; font-size: .8rem; font-weight: 400; }
+@media (max-width: 600px) { .climate-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); } }

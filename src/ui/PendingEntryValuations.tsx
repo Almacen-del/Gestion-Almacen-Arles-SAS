@@ -104,6 +104,7 @@ export default function PendingEntryValuations({
   records,
   loading,
   loadError,
+  onSaveEntry = saveEntryValuation,
 }: {
   canManage?: boolean;
   online: boolean;
@@ -114,6 +115,7 @@ export default function PendingEntryValuations({
   records: Record<string, EntryValuationRecord>;
   loading: boolean;
   loadError: string;
+  onSaveEntry?: typeof saveEntryValuation;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState('');
@@ -146,7 +148,7 @@ export default function PendingEntryValuations({
     setSavingId(row.id);
     setRowErrors((current) => ({ ...current, [row.id]: '' }));
     try {
-      await saveEntryValuation({
+      await onSaveEntry({
         movementId: row.id,
         priorMovementIds: row.priorMovementIds,
         entryUnitValue: calculation.unitValue,

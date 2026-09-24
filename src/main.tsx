@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import ErrorBoundary from './ErrorBoundary';
 import StartupScreen from './StartupScreen';
-import { validateFirebaseEnvironment } from './startupConfig';
+import { USE_SUPABASE } from './backend/selection';
 import { initializeMonitoring, Logger, setupGlobalErrorHandler } from './utils/logger';
 import { retireLegacyPwa } from './retireLegacyPwa';
 import { APP_RELEASE } from './release';
@@ -24,6 +24,11 @@ root.render(<StartupScreen state="loading" />);
 
 async function closeSessionAndReload() {
   try {
+    if(USE_SUPABASE) {
+      const {webSupabaseClient}=await import('./backend/supabase/runtime');
+      await webSupabaseClient().auth.signOut({scope:'local'});
+      return;
+    }
     const [{ signOut }, { auth }] = await Promise.all([
       import('firebase/auth'),
       import('./firebase'),
@@ -37,13 +42,13 @@ async function closeSessionAndReload() {
 }
 
 async function bootstrap() {
-  const validation = validateFirebaseEnvironment(import.meta.env);
-  if (!validation.valid) {
-    root.render(<StartupScreen state="missing-config" missingVariables={validation.missingVariables} />);
-    return;
-  }
-
   try {
+    if(USE_SUPABASE) {
+      const {default:Panel}=import.meta.env.DEV && new URLSearchParams(window.location.search).get('review')==='valuations'
+        ? await import('./ui/SupabaseValuations') : await import('./ui/SupabasePanel');
+      root.render(<StrictMode><ErrorBoundary onSignOut={closeSessionAndReload}><Panel/></ErrorBoundary></StrictMode>);
+      return;
+    }
     const [{ auth, firebaseApp }, { configureBrowserAuthPersistence }] = await Promise.all([
       import('./firebase'),
       import('./auth/browserAuth'),

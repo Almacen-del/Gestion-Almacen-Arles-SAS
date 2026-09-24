@@ -1,6 +1,7 @@
+import type {MonthlyReader} from '../backend/supabase/monthly';
 import ColumnFilterTable from './ColumnFilterTable';
 import MonthlyCloseRecoveryPanel from './MonthlyCloseRecoveryPanel';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { User } from 'firebase/auth';
 import {
   AlertTriangle,
@@ -55,7 +56,8 @@ import MonthlyActivityPanel from './MonthlyActivityPanel';
 import { summarizeMonthlyActivity, type MonthlyActivitySource } from '../valuation/monthlyActivity';
 import { priorPeriods, reconstructHistoricalMonthlyClose } from '../valuation/historicalReconstruction';
 
-type ValuationTab = 'current' | 'entries' | 'history';
+const SupabaseValuations = lazy(() => import('./SupabaseValuations'));
+type ValuationTab = 'current' | 'entries' | 'history' | 'supabase';
 type MonthlySaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 function formatCurrency(value: number) {
@@ -252,8 +254,10 @@ function MonthlyCloseConfirmation({
   );
 }
 
-function CurrentValuationView({
+export function CurrentValuationView({
   canManage,
+  monthlyEnabled = true,
+  monthlyRepository,
   monthlyActivitySources,
   rows,
   moduleOptions,
@@ -271,6 +275,8 @@ function CurrentValuationView({
   onOpenHistory,
 }: {
   canManage: boolean;
+  monthlyEnabled?: boolean;
+  monthlyRepository?:MonthlyReader;
   monthlyActivitySources: readonly MonthlyActivitySource[];
   rows: CurrentValuationRow[];
   moduleOptions: string[];
@@ -325,7 +331,7 @@ function CurrentValuationView({
   const canReviewEntries = /entrada\(s\).*pendientes|entrada\(s\).*inconsistentes/.test(blockerText);
   const canShowUnvalued = /cantidad positiva y sin valor unitario/.test(blockerText);
 
-  useEffect(() => subscribeMonthlyValuationPeriod(
+  useEffect(() => monthlyEnabled ? (monthlyRepository?.subscribe??subscribeMonthlyValuationPeriod)(
     period,
     setExistingClose,
     (error) => {
@@ -336,10 +342,10 @@ function CurrentValuationView({
       }));
     },
     (metadata) => setClosesSource(stateFromSnapshot(metadata)),
-  ), [period]);
+  ) : undefined, [period, monthlyEnabled,monthlyRepository]);
 
   async function confirmMonthlyClose(earlyConfirmation: string) {
-    if (!canManage) return;
+    if (!canManage || !monthlyEnabled) return;
     const latestEligibility = evaluateMonthlyCloseEligibility({
       movementHistoryComplete: exitHistoryComplete,
       period,
@@ -367,7 +373,7 @@ function CurrentValuationView({
     setSaveProgress({ completed: 0, total: 1 });
 
     try {
-      const result = await saveMonthlyValuationClose({
+      const result = await (monthlyRepository?.save??saveMonthlyValuationClose)({
         movements: monthlyActivitySources,
         historyComplete: exitHistoryComplete,
         period,
@@ -398,7 +404,7 @@ function CurrentValuationView({
       } else if (error instanceof EarlyMonthlyCloseConfirmationError) {
         setSaveMessage(error.message);
       } else {
-        setSaveMessage('No se pudo completar el corte. Verifica la conexión y los permisos de Firestore.');
+        setSaveMessage(error instanceof Error?error.message:'No se pudo completar el corte. Verifica la conexión y los permisos.');
       }
     }
   }
@@ -427,7 +433,7 @@ function CurrentValuationView({
             <option value="unvalued">Sin valor</option>
           </select>
         </label>
-        <button
+        {monthlyEnabled && <button
           className="tool-button valuation-close-button"
           type="button"
           disabled={!canManage || !eligibility.eligible || saveState === 'saving'}
@@ -445,10 +451,10 @@ function CurrentValuationView({
               : existingClose?.status === 'guardando'
                 ? 'Corte en proceso'
                 : 'Guardar corte del mes'}
-        </button>
+        </button>}
       </div>
 
-      {!eligibility.eligible && saveState !== 'saving' && (
+      {monthlyEnabled && !eligibility.eligible && saveState !== 'saving' && (
         <div className="valuation-close-blockers" role="status">
           <AlertTriangle size={18} />
           <div>
@@ -541,7 +547,7 @@ function CurrentValuationView({
                 <small>{entry.valuedCount} con valor de {entry.productCount}</small>
               </button>
             ))}
-          <article className="valuation-exit-expense-card" title="Estimación calculada con el valor unitario promedio actual de cada producto; no reemplaza un costo histórico por salida.">
+          {monthlyEnabled && <article className="valuation-exit-expense-card" title="Estimación calculada con el valor unitario promedio actual de cada producto; no reemplaza un costo histórico por salida.">
             <span>Gasto total estimado de salidas</span>
             <strong>{exitHistoryComplete ? formatCurrency(estimatedExitExpense.estimatedTotal) : 'Calculando…'}</strong>
             <small>{exitHistoryComplete
@@ -553,7 +559,7 @@ function CurrentValuationView({
                 <ul>{estimatedExitExpense.missingValuations.map((entry) => <li key={entry.productId}><span>{entry.code} · {entry.product}</span><small>{entry.moduleName} · {entry.exitCount} {entry.exitCount === 1 ? 'salida' : 'salidas'}</small></li>)}</ul>
               </details>
             )}
-          </article>
+          </article>}
         </div>
       </section>
 
@@ -611,7 +617,7 @@ function CurrentValuationView({
                 <tr><td colSpan={8} className="empty-cell"><div className="empty-state"><Search size={28} /><strong>Sin productos para estos filtros</strong><span>Ajusta el módulo, el estado de valoración o el buscador.</span></div></td></tr>
               )}
               {loading && (
-                <tr><td colSpan={8} className="empty-cell"><div className="loading-state"><span className="loading-dot" /><span>Cargando valoración desde Firestore...</span></div></td></tr>
+                <tr><td colSpan={8} className="empty-cell"><div className="loading-state"><span className="loading-dot" /><span>Cargando valoración...</span></div></td></tr>
               )}
             </tbody>
           </ColumnFilterTable>
@@ -634,9 +640,10 @@ function CurrentValuationView({
   );
 }
 
-function HistoricalValuationView({
-  sources, historyReady, currentRows, moduleOptions, online, user, canManage,
+export function HistoricalValuationView({
+  sources, historyReady, currentRows, moduleOptions, online, user, canManage, repository,
 }: {
+  repository?:MonthlyReader;
   canManage: boolean;
   sources: readonly MonthlyActivitySource[];
   historyReady: boolean;
@@ -668,7 +675,7 @@ function HistoricalValuationView({
   useEffect(() => {
     let active = true;
     setLoadingSummaries(true);
-    void loadMonthlyValuationSummaryPage()
+    void (repository?.summaries??loadMonthlyValuationSummaryPage)()
       .then((page) => {
         if (!active) return;
         setSummaries(page.summaries);
@@ -685,7 +692,7 @@ function HistoricalValuationView({
         if (active) setLoadingSummaries(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [repository]);
 
   async function loadMoreSummaries() {
     if (loadingSummaryPageRef.current || !hasMoreSummaries) return;
@@ -693,7 +700,7 @@ function HistoricalValuationView({
     setLoadingMoreSummaries(true);
     setHistoryError('');
     try {
-      const page = await loadMonthlyValuationSummaryPage(summaryCursorRef.current);
+      const page = await (repository?.summaries??loadMonthlyValuationSummaryPage)(summaryCursorRef.current);
       setSummaries((current) => mergeMonthlyValuationSummaryPages(current, page.summaries));
       summaryCursorRef.current = page.cursor;
       setHasMoreSummaries(page.hasMore);
@@ -714,7 +721,7 @@ function HistoricalValuationView({
     let active = true;
     setLoadingItems(true);
     setHistoryError('');
-    void loadMonthlyValuationItems(selectedPeriod)
+    void (repository?.items??loadMonthlyValuationItems)(selectedPeriod)
       .then((nextItems) => {
         if (active) { setItems(nextItems); setItemsPeriod(selectedPeriod); }
       })
@@ -726,7 +733,7 @@ function HistoricalValuationView({
         if (active) setLoadingItems(false);
       });
     return () => { active = false; };
-  }, [selectedPeriod]);
+  }, [selectedPeriod,repository]);
 
   const selectedSummary = summaries.find((entry) => entry.period === selectedPeriod) ?? null;
   const previousSummary = selectedSummary
@@ -786,7 +793,7 @@ function HistoricalValuationView({
     setReconstructionMessage('Guardando cierre reconstruido...');
     setReconstructionProgress({ completed: 0, total: 1 });
     try {
-      await saveMonthlyValuationClose({
+      await (repository?.save??saveMonthlyValuationClose)({
         period: selectedReconstruction.period,
         rows: selectedReconstruction.rows,
         moduleOptions: [...moduleOptions],
@@ -808,7 +815,7 @@ function HistoricalValuationView({
       setReconstructionMessage(`${formatValuationPeriod(selectedReconstruction.period)} quedó guardado como reconstrucción con precios actuales.`);
       setReconstructionConfirmation('');
       try {
-        const page = await loadMonthlyValuationSummaryPage();
+        const page = await (repository?.summaries??loadMonthlyValuationSummaryPage)();
         setSummaries(page.summaries);
         summaryCursorRef.current = page.cursor;
         setHasMoreSummaries(page.hasMore);
@@ -923,7 +930,7 @@ function HistoricalValuationView({
           <p>Usa “Guardar corte del mes” en la pestaña Valor actual para crear el primer histórico.</p>
         </article>
       ) : view !== 'inventory' ? (
-        <MonthlyActivityPanel key={selectedSummary.period} view={view} summary={selectedSummary} items={items}
+        <MonthlyActivityPanel loadActivity={repository?.activity} key={selectedSummary.period} view={view} summary={selectedSummary} items={items}
           sources={sources} historyReady={historyReady} itemsReady={itemsPeriod === selectedPeriod && !loadingItems} />
       ) : (
         <>
@@ -1066,11 +1073,12 @@ export default function InventoryValuationModule({
       {!canManage && <p role="status">Modo consulta: las valoraciones y los cierres solo pueden guardarlos un administrador o almacenista.</p>}
       {canManage && <MonthlyCloseRecoveryPanel userUid={user.uid} online={online} />}
       <div className="valuation-tabs" role="tablist" aria-label="Vistas de valoración">
+        {import.meta.env.DEV && import.meta.env.VITE_SUPABASE_VALUATIONS_REVIEW==='true' && <button type="button" role="tab" aria-selected={activeTab==='supabase'} className={activeTab==='supabase'?'active':''} onClick={()=>setActiveTab('supabase')}>Supabase · revisión</button>}
         <button type="button" role="tab" aria-selected={activeTab === 'current'} className={activeTab === 'current' ? 'active' : ''} onClick={() => setActiveTab('current')}>Valor actual</button>
         <button type="button" role="tab" aria-selected={activeTab === 'entries'} className={activeTab === 'entries' ? 'active' : ''} onClick={() => setActiveTab('entries')}>Entradas por valorar</button>
         <button type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>Histórico mensual</button>
       </div>
-      {activeTab === 'current' ? (
+      {activeTab === 'supabase' ? <Suspense fallback={<p role="status">Cargando valoraciones…</p>}><SupabaseValuations/></Suspense> : activeTab === 'current' ? (
         <CurrentValuationView
           canManage={canManage}
           monthlyActivitySources={monthlyActivitySources}

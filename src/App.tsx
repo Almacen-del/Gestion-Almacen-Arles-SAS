@@ -1,3 +1,12 @@
+import AgrochemicalClimateModal from './ui/AgrochemicalClimateModal';
+import {WebOperations} from './backend/supabase/operations';
+import {WebAdministration,type ManualValuationRequest} from './backend/supabase/administration';
+import {loadPanelSnapshot,type PanelSnapshot} from './backend/supabase/panel';
+import type {WebAccess} from './backend/supabase/administration';
+import SupabaseValuations from './ui/SupabaseValuations';
+import {loadPrivateEvidence} from './backend/supabase/client';
+import {webSupabaseClient} from './backend/supabase/runtime';
+import type {InventoryItem,Movement,UserProfile,OccupiedUnitCard,OccupiedSubmoduleGroup} from './backend/panelModels';
 import ColumnFilterTable from './ui/ColumnFilterTable';
 import AgrochemicalLocationSelect from './ui/AgrochemicalLocationSelect';
 import { saveAgrochemicalLocation } from './agroquimicosUbicacion';
@@ -190,98 +199,6 @@ const moduleIcons: Record<string, string> = {
 function moduleIcon(moduleName: string) {
   return moduleIcons[moduleName] ?? './module-icons/consumibles.svg';
 }
-
-type InventoryItem = {
-  id: string;
-  valuationId: string;
-  modulo: string;
-  codigo: string;
-  descripcion: string;
-  referencia: string;
-  categoria: string;
-  unidad: string;
-  saldo: number;
-  estado?: string;
-  ubicacion?: string;
-  subcategoria?: string;
-  marca?: string;
-  caracteristica?: string;
-  total?: number;
-  ocupados?: number;
-  requiereQr?: boolean;
-  codigoQr?: string;
-  responsable?: string;
-  expirationDate?: string;
-  confirmedObsolete?: boolean;
-};
-
-type OccupiedUnitCard = {
-  id: string;
-  submodulo: string;
-  codigo: string;
-  descripcion: string;
-  subcategoria?: string;
-  caracteristica?: string;
-  solicitante: string;
-  unitIndex: number;
-  unitTotal: number;
-};
-
-type OccupiedSubmoduleGroup = {
-  submodulo: string;
-  items: OccupiedUnitCard[];
-};
-
-type Movement = {
-  hiddenFromOperationalHistory?: boolean;
-  destinationLot?: string;
-  monthlyOccurredAt?: string;
-  id: string;
-  modulo: string;
-  tipo: string;
-  codigo: string;
-  descripcion: string;
-  referencia: string;
-  cantidad: number;
-  unidad: string;
-  fecha: string;
-  solicitante: string;
-  cargo: string;
-  usuario: string;
-  observaciones: string;
-  fotoUrl: string;
-  submodulo?: string;
-  submoduloOrigen?: string;
-  maquinaria?: string;
-  ubicacion?: string;
-  zona?: string;
-  labor?: string;
-  frente?: string;
-  horometro?: string;
-  responsableEntrega?: string;
-  usuarioUid?: string;
-  placaSerial?: string;
-  proveedor?: string;
-  entregaEntrada?: string;
-  productDocumentId?: string;
-  documentId?: string;
-  stockBefore?: number;
-  stockAfter?: number;
-  lote?: string;
-  fechaVencimiento?: string;
-  lotesSalida?: LoteMovimientoReporte[];
-};
-
-type UserProfile = {
-  id: string;
-  nombre: string;
-  cargo: string;
-  email: string;
-  rol: string;
-  role?: string;
-  estado: string;
-  activo: boolean;
-};
 
 type Totals = Record<string, { entradas: number; salidas: number }>;
 
@@ -1264,9 +1181,10 @@ function PendingUsersPanel({
 // Note: placed here to avoid extra state lifting
 
 
-function AppShell({ user }: { user: User }) {
-  const cacheContext = useMemo(() => ({ uid: user.uid, projectId: firebaseProjectId }), [user.uid]);
+export function AppShell({ user, supabase }: { user: User; supabase?: {snapshot:PanelSnapshot;access:WebAccess;logout:()=>void;refresh:()=>Promise<void>} }) {
+  const cacheContext = useMemo(() => ({ uid: user.uid, projectId: supabase ? 'supabase-arles' : firebaseProjectId }), [user.uid,Boolean(supabase)]);
   const [cachedPanelData] = useState(() => {
+    if(supabase)return null;
     const cached = loadPanelCache<InventoryItem>(window.localStorage, cacheContext);
     if (!cached) return null;
     return {
@@ -1307,6 +1225,7 @@ function AppShell({ user }: { user: User }) {
   const [showOccupiedModal, setShowOccupiedModal] = useState(false);
   const [showEntriesModal, setShowEntriesModal] = useState(false);
   const [showAgrochemicalExpirationModal, setShowAgrochemicalExpirationModal] = useState(false);
+  const [showAgrochemicalClimateModal, setShowAgrochemicalClimateModal] = useState(false);
   const [exitDateFrom, setExitDateFrom] = useState('');
   const [exitDateTo, setExitDateTo] = useState('');
   const [exitCode, setExitCode] = useState('');
@@ -1389,6 +1308,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   async function loadMoreMovementHistory() {
+    if(supabase){await supabase.refresh();return;}
     if (exportingMovementReportRef.current || loadingMovementPageRef.current || !movementCursorRef.current || !hasMoreMovements) return;
     loadingMovementPageRef.current = true;
     setLoadingMoreMovements(true);
@@ -1410,6 +1330,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   async function loadCompleteMovementHistory() {
+    if(supabase)return supabase.snapshot.movements;
     if (loadingMovementPageRef.current) {
       throw new Error('Ya se está cargando una página del historial.');
     }
@@ -1442,6 +1363,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   useEffect(() => {
+    if(supabase)return;
     const unsubscribeInventory = onSnapshot(
       collection(db, 'existencias'),
       { includeMetadataChanges: true },
@@ -1563,6 +1485,7 @@ function AppShell({ user }: { user: User }) {
   }, []);
 
   useEffect(() => {
+    if(supabase)return;
     setAgrochemicalLotsLoading(true);
     setAgrochemicalLotsError('');
     return onSnapshot(
@@ -1613,6 +1536,18 @@ function AppShell({ user }: { user: User }) {
     }
   }, [aseoInventory, cacheContext, inventory, lastSync, tools]);
 
+  useEffect(()=>{
+    if(!supabase)return;
+    const data=supabase.snapshot;
+    setInventory(data.inventory);setAseoInventory(data.aseo);setTools(data.tools);
+    setMovements(data.movements);setHasMoreMovements(false);setUsers(data.users);setValuations(data.valuations);
+    setEntryStockMovements(data.entries);setEntryValuationRecords(data.entryValues);
+    setValuationDocumentIds(new Set(Object.keys(data.valuations)));
+    setAgrochemicalLots(data.lots);setAgrochemicalLotsLoading(false);setAgrochemicalLotsError('');setLastSync(data.readAt);
+    setFirestoreSources(Object.fromEntries(FIRESTORE_SOURCE_KEYS.map(key=>[key,{received:true,fromCache:false,hasPendingWrites:false,
+      error:''}])) as ReturnType<typeof createInitialFirestoreSourceStates>);
+  },[supabase?.snapshot]);
+
   const inventoryTableRef = useRef<HTMLDivElement>(null);
 
   function resetModuleViewState() {
@@ -1632,6 +1567,7 @@ function AppShell({ user }: { user: User }) {
     setShowOccupiedModal(false);
     setShowEntriesModal(false);
     setShowAgrochemicalExpirationModal(false);
+    setShowAgrochemicalClimateModal(false);
   }
 
   function selectModule(nextModule: string) {
@@ -1640,9 +1576,12 @@ function AppShell({ user }: { user: User }) {
     setModule(nextModule);
   }
 
-  const canManageUsers = user.email?.toLowerCase() === 'almacen@arlessas.com'
-    || ['owner', 'admin', 'administrador'].includes((users[user.uid]?.rol || users[user.email || '']?.rol || '').toLowerCase());
-  const canManageInventory = canManageInventoryProfile(user.email, users[user.uid] ?? users[user.email || ''] ?? null);
+  const webOperations=useMemo(()=>supabase?new WebOperations(webSupabaseClient()):null,[!!supabase]);
+  const webValuationBaselines=useRef(new Map<string,number>());
+  const webValuationRequests=useRef(new Map<string,ManualValuationRequest>());
+  const canManageUsers = supabase ? supabase.access.operational&&supabase.access.role==='ADMIN' : (user.email?.toLowerCase() === 'almacen@arlessas.com'
+    || ['owner', 'admin', 'administrador'].includes((users[user.uid]?.rol || users[user.email || '']?.rol || '').toLowerCase()));
+  const canManageInventory = supabase ? supabase.access.operational&&supabase.access.role!=='READER' : canManageInventoryProfile(user.email, users[user.uid] ?? users[user.email || ''] ?? null);
 
   const pendingUsers = useMemo(() => {
     const uniqueProfiles = new Map<string, UserProfile>();
@@ -1655,6 +1594,12 @@ function AppShell({ user }: { user: User }) {
   }, [users]);
 
   async function saveUserProfile(profile: UserProfile, role: string, name: string, jobTitle: string, state: string) {
+    if(supabase&&webOperations){
+      const roles:Record<string,string>={admin:'ADMIN',administrador:'ADMIN',owner:'ADMIN',almacenista:'MANAGER',lector:'READER',usuario:'READER',operador:'READER'};
+      if(!roles[role.toLowerCase()])throw Error('Selecciona un perfil válido.');
+      await webOperations.save('web_update_profile',profile.id,{p_user_id:profile.id,p_role:roles[role.toLowerCase()],p_name:name,p_job:jobTitle,p_active:state==='activo'});
+      await supabase.refresh();return;
+    }
     const isActive = state === 'activo';
     await updateDoc(doc(db, 'usuarios', profile.id), {
       nombres: name,
@@ -1689,6 +1634,14 @@ function AppShell({ user }: { user: User }) {
   }
 
   async function toggleTallerStatus(item: InventoryItem) {
+    if(supabase&&webOperations){
+      const id=toolDocumentId(item),balance=id?supabase.snapshot.toolBalances[id]:null;
+      if(!id||!balance||savingToolStatusIds.current.has(item.id))return;
+      savingToolStatusIds.current.add(item.id);
+      try{await webOperations.save('web_set_workshop_status',id,{p_asset_id:id,p_expected_total:balance.total,p_expected_loaned:balance.loaned,p_expected_maintenance:balance.maintenance,p_maintenance:balance.maintenance===0});await supabase.refresh();setError('');}
+      catch(e){setError(e instanceof Error?e.message:'No se pudo guardar el estado.');}
+      finally{savingToolStatusIds.current.delete(item.id);}return;
+    }
     if (savingToolStatusIds.current.has(item.id) || isTallerStatusBusy(tallerStatusState, item.id)) return;
     const toolId = toolDocumentId(item);
     if (!toolId) {
@@ -1730,6 +1683,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   function resetValuationDraft(item: InventoryItem) {
+    webValuationBaselines.current.delete(item.valuationId);
     setValuationDrafts((prev) => {
       const next = { ...prev };
       delete next[item.valuationId];
@@ -1744,6 +1698,7 @@ function AppShell({ user }: { user: User }) {
   }
 
   function beginValuationEdit(item: InventoryItem) {
+    if(supabase&&!webValuationBaselines.current.has(item.valuationId))webValuationBaselines.current.set(item.valuationId,supabase.snapshot.valuationTargets[item.valuationId]?.revision??0);
     setValuationEditBaselines((current) => captureValuationBaseline(
       current,
       item.valuationId,
@@ -1779,6 +1734,20 @@ function AppShell({ user }: { user: User }) {
 
   async function saveUnitValuation(item: InventoryItem): Promise<boolean> {
     if (!canManageInventory) return false;
+    if(supabase){
+      const id=item.valuationId,raw=valuationDrafts[id],target=supabase.snapshot.valuationTargets[id];
+      if(raw===undefined||!target||savingValuationIds.current.has(id))return false;
+      const value=Number(raw.replace(',','.'));if(!raw.trim()||!Number.isFinite(value)||value<0){setError('Escribe un valor válido.');return false;}
+      let request=webValuationRequests.current.get(id);
+      if(request&&request.unitValue!==value){setError('Reintenta primero el valor pendiente.');return false;}
+      request??={requestId:crypto.randomUUID(),entity:target.entity,entityId:target.entityId,expectedRevision:webValuationBaselines.current.get(id)??target.revision,unitValue:value};
+      webValuationRequests.current.set(id,request);savingValuationIds.current.add(id);setValuationSaveStates(prev=>({...prev,[id]:'saving'}));
+      try{const result=await new WebAdministration(webSupabaseClient()).saveManual(request);webValuationRequests.current.delete(id);
+        if(result.status==='conflict'){resetValuationDraft(item);await supabase.refresh();throw Error('El precio cambió en otro equipo. Revisa el valor actualizado antes de guardar otra vez.');}
+        setValuations(prev=>({...prev,[id]:result.unit_value??0}));resetValuationDraft(item);setValuationSaveStates(prev=>({...prev,[id]:'saved'}));await supabase.refresh();setError('');return true;
+      }catch(e){setError(e instanceof Error?e.message:'No se pudo confirmar el valor.');setValuationSaveStates(prev=>({...prev,[id]:'error'}));return false;}
+      finally{savingValuationIds.current.delete(id);}
+    }
     if (savingValuationIds.current.has(item.valuationId)) return false;
     const rawValue = valuationDrafts[item.valuationId];
     if (rawValue === undefined) {
@@ -1835,6 +1804,7 @@ function AppShell({ user }: { user: User }) {
 
   function openValuationModal(item: InventoryItem) {
     if (!canManageInventory) return;
+    beginValuationEdit(item);
     setValuationEditBaselines((current) => ({
       ...current,
       [item.valuationId]: valuationRevisions[item.valuationId] ?? emptyValuationRevision(),
@@ -1967,11 +1937,19 @@ function AppShell({ user }: { user: User }) {
   ).filter((entry) => entry.assignmentStatus !== 'assigned').length, [agrochemicalLots, agrochemicalStockEntries]);
 
   async function registerAgrochemicalLot(registration: AgrochemicalLotRegistration) {
+    if(supabase){
+      const separator=registration.productDocumentId.indexOf(':');
+      const amount=registration.quantity*1000;if(!Number.isSafeInteger(amount))throw Error('Usa como máximo tres decimales.');
+      const {data,error}=await webSupabaseClient().rpc('web_assign_agro_lot',{p_request_id:registration.operationId,p_product_id:registration.productDocumentId.slice(0,separator),p_location:registration.productDocumentId.slice(separator+1),p_existing_position:registration.existingLotId??null,p_lot:registration.lotNumber,p_expiration:registration.expirationDate,p_quantity_milli:amount,p_received_at:registration.receivedAt,p_entry_id:registration.sourceEntryId??null,p_link_only:registration.linkExistingLotWithoutStockIncrease});
+      if(error){const failure=Object.assign(new Error(error.code==='P0001'?error.message:'No se pudo confirmar la asignación. Reintenta el mismo comprobante.'),{code:['P0001','42501','22008'].includes(error.code)?'functions/failed-precondition':'unknown'});throw failure;}
+      if(data?.operationId!==registration.operationId||data?.productDocumentId!==registration.productDocumentId)throw Error('No se pudo confirmar el comprobante.');
+      await supabase.refresh();return;
+    }
     if (!canManageInventory) throw new Error('Solo un administrador o almacenista puede asignar lotes.');
     await registerAgrochemicalLotOnServer(firebaseApp, registration);
   }
   const toolsInventory = useMemo(
-    () => visibleToolInventory(tools, usingCachedData && tools.length === 0 && !online),
+    () => visibleToolInventory(tools, !supabase && usingCachedData && tools.length === 0 && !online),
     [online, tools, usingCachedData],
   );
   const valuationInventory = useMemo(() => {
@@ -2022,6 +2000,7 @@ function AppShell({ user }: { user: User }) {
     .filter((item) => !moduleMatches(item.modulo, 'TALLER'))
     .map((item) => ({
       id: item.id,
+      valuationId:item.valuationId,
       module: item.modulo,
       code: item.codigoQr || item.codigo,
       name: item.descripcion,
@@ -2194,12 +2173,13 @@ function AppShell({ user }: { user: User }) {
 
   const occupiedUnitCards = useMemo(() => {
     if (!isTallerModule) return [];
+    if(supabase)return supabase.snapshot.occupiedCards.filter(card=>!tallerSubmodulo||coincideSubmoduloTaller(card.submodulo,tallerSubmodulo));
     const occupiedTools = toolsInventory
       .filter((item) => !retiredToolCodes.has(normalizeToolCode(item.codigo)))
       .filter((item) => !tallerSubmodulo || coincideSubmoduloTaller(item.categoria, tallerSubmodulo))
       .filter((item) => (item.ocupados ?? 0) > 0);
     return expandTallerOccupiedUnits(occupiedTools, scopedMovements);
-  }, [isTallerModule, scopedMovements, toolsInventory, tallerSubmodulo]);
+  }, [isTallerModule, scopedMovements, toolsInventory, tallerSubmodulo, supabase]);
 
   const occupiedGroups = useMemo(
     () => groupOccupiedBySubmodule(occupiedUnitCards),
@@ -2246,9 +2226,11 @@ function AppShell({ user }: { user: User }) {
     setExitVisibleLimit(movementLimit);
   }, [agroquimicosUbicacion, hasExitFilters, module, movementLimit, tallerSubmodulo]);
 
-  async function loadCurrentReportInventory() {
+  async function loadCurrentReportInventory(confirmed?: PanelSnapshot) {
     let sourceItems: InventoryItem[];
-    if (isTallerModule) {
+    if (confirmed) {
+      sourceItems = [...confirmed.inventory, ...confirmed.aseo, ...confirmed.tools];
+    } else if (isTallerModule) {
       const snapshot = await getDocsFromServer(collection(db, 'herramientas'));
       sourceItems = snapshot.docs.map(readToolDoc);
     } else if (moduleMatches(module, 'ASEO')) {
@@ -2280,9 +2262,11 @@ function AppShell({ user }: { user: User }) {
     setExportando(true);
     setError('');
     try {
-      let inventoryBefore = await loadCurrentReportInventory();
-      let completeHistory = await loadCompleteMovementHistory();
-      let inventoryAfter = await loadCurrentReportInventory();
+      // A single PostgreSQL snapshot keeps balances and movements consistent.
+      const confirmed = supabase ? await loadPanelSnapshot(webSupabaseClient()) : undefined;
+      let inventoryBefore = await loadCurrentReportInventory(confirmed);
+      let completeHistory = confirmed ? confirmed.movements : await loadCompleteMovementHistory();
+      let inventoryAfter = confirmed ? inventoryBefore : await loadCurrentReportInventory();
 
       if (inventoryReportFingerprint(inventoryBefore) !== inventoryReportFingerprint(inventoryAfter)) {
         inventoryBefore = inventoryAfter;
@@ -2300,12 +2284,12 @@ function AppShell({ user }: { user: User }) {
         setError('No hay inventario ni movimientos que coincidan con el módulo y los filtros activos.');
         return;
       }
-      const reportLots = isAgroquimicosModule
+      const reportLots = confirmed ? confirmed.lots : isAgroquimicosModule
         ? (await getDocsFromServer(collectionGroup(db, 'lotes_agroquimicos'))).docs.filter(doc => isCanonicalAgrochemicalLotPath(doc.ref.path)).map(readAgrochemicalLotDoc)
         : [];
       // Fuel delivery names must come from the movement's actor and fresh profiles,
       // not from the exporting session or a not-yet-loaded user listener.
-      const reportUsers = moduleMatches(module, 'Combustible')
+      const reportUsers = confirmed ? confirmed.users : moduleMatches(module, 'Combustible')
         ? Object.fromEntries((await getDocsFromServer(collection(db, 'usuarios'))).docs.map(snapshot => {
           const profile = readUserDoc(snapshot);
           return [profile.id, profile];
@@ -2445,7 +2429,7 @@ function AppShell({ user }: { user: User }) {
           </div>
         </div>
 
-        <button className="logout-button" onClick={() => signOut(auth)}>
+        <button className="logout-button" onClick={() => supabase ? supabase.logout() : signOut(auth)}>
           <LogOut size={17} />
           <span>Salir</span>
         </button>
@@ -2596,7 +2580,7 @@ function AppShell({ user }: { user: User }) {
           </div>
         )}
 
-        {isValuationModule && (
+        {isValuationModule && (supabase ? <SupabaseValuations snapshot={supabase.snapshot}/> :
           <InventoryValuationModule
             canManage={canManageInventory}
             rows={valuationRows}
@@ -2683,6 +2667,7 @@ function AppShell({ user }: { user: User }) {
               ]))}
               allCount={agroquimicosInventoryBase.length}
             />
+            {supabase && <button type="button" className="agro-expiration-button" onClick={() => setShowAgrochemicalClimateModal(true)}>Temperatura y humedad</button>}
             <button
               type="button"
               className="agro-expiration-button"
@@ -2832,12 +2817,12 @@ function AppShell({ user }: { user: User }) {
                               <AgrochemicalLocationSelect
                                 location={item.ubicacion || ''}
                                 productLabel={`${item.codigo} · ${item.descripcion}`}
-                                blockedReason={!online
+                                blockedReason={!canManageInventory ? 'Tu perfil no permite cambiar la bodega.' : !online
                                   ? 'Conéctate a internet para cambiar la ubicación.'
                                   : !isServerSourceReady(firestoreSources.inventory)
                                     ? 'Esperando sincronización con Firestore.'
                                     : ''}
-                                onSave={(location) => saveAgrochemicalLocation({
+                                onSave={async(location) => supabase&&webOperations ? (await webOperations.save('web_change_agro_location',item.id,{p_product_id:item.id.split(':')[0],p_expected:item.ubicacion||'',p_location:location}),await supabase.refresh(),location) : saveAgrochemicalLocation({
                                   db,
                                   productId: item.id,
                                   expectedLocation: item.ubicacion || '',
@@ -3026,6 +3011,7 @@ function AppShell({ user }: { user: User }) {
           onClose={() => setShowOccupiedModal(false)}
         />
       )}
+      {showAgrochemicalClimateModal && isAgroquimicosModule && supabase && <AgrochemicalClimateModal onClose={() => setShowAgrochemicalClimateModal(false)} />}
       {showAgrochemicalExpirationModal && isAgroquimicosModule && (
         <AgrochemicalExpirationModal
           canRegister={canManageInventory}
@@ -3035,7 +3021,8 @@ function AppShell({ user }: { user: User }) {
           loading={agrochemicalLotsLoading}
           sourceError={agrochemicalLotsError}
           onRegister={registerAgrochemicalLot}
-          registrationScope={`${firebaseProjectId}:${user.uid}`}
+          registrationScope={`${supabase?'supabase-arles':firebaseProjectId}:${user.uid}`}
+          confirmedAssignments={supabase?.snapshot.entryLotTotals}
           onClose={() => setShowAgrochemicalExpirationModal(false)}
         />
       )}
@@ -3058,7 +3045,7 @@ function AppShell({ user }: { user: User }) {
       )}
       {showPendingUsers && canManageUsers && (
         <PendingUsersPanel
-          users={Object.values(users).filter((profile, index, profiles) => profiles.findIndex((candidate) => candidate.id === profile.id) === index).sort((left, right) => {
+          users={Object.values(users).filter(profile=>!supabase||profile.manageable).filter((profile, index, profiles) => profiles.findIndex((candidate) => candidate.id === profile.id) === index).sort((left, right) => {
             const leftPending = left.estado === 'pendiente' ? 0 : 1;
             const rightPending = right.estado === 'pendiente' ? 0 : 1;
             return leftPending - rightPending || left.email.localeCompare(right.email);
@@ -3411,7 +3398,18 @@ function OccupiedModal({
 }
 
 function EvidenceModal({ movement, registeredBy, onClose }: { movement: Movement; registeredBy: string; onClose: () => void }) {
-  const canPreview = canPreviewEvidence(movement.fotoUrl);
+  const [privateUrl,setPrivateUrl]=useState('');
+  const [photoError,setPhotoError]=useState('');
+  useEffect(()=>{
+    if(!movement.fotoUrl.startsWith('supabase:'))return;
+    let active=true,url='';setPrivateUrl('');setPhotoError('');
+    void loadPrivateEvidence(webSupabaseClient(),movement.fotoUrl.slice(9)).then(blob=>{
+      if(!active)return;url=URL.createObjectURL(blob);setPrivateUrl(url);
+    }).catch(()=>{if(active)setPhotoError('No se pudo cargar la fotografía. Revisa tu conexión.');});
+    return()=>{active=false;if(url)URL.revokeObjectURL(url);};
+  },[movement.fotoUrl]);
+  const imageUrl=movement.fotoUrl.startsWith('supabase:')?privateUrl:movement.fotoUrl;
+  const canPreview = !!privateUrl || canPreviewEvidence(imageUrl);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -3428,11 +3426,11 @@ function EvidenceModal({ movement, registeredBy, onClose }: { movement: Movement
 
         <div className="evidence-body">
           {canPreview ? (
-            <img src={movement.fotoUrl} alt={`Evidencia de ${movement.descripcion}`} referrerPolicy="no-referrer" />
+            <img src={imageUrl} alt={`Evidencia de ${movement.descripcion}`} referrerPolicy="no-referrer" />
           ) : (
             <div className="evidence-empty">
               <Camera size={30} />
-              <span>Evidencia pendiente</span>
+              <span>{photoError || (movement.fotoUrl.startsWith('supabase:') ? 'Cargando evidencia…' : 'Evidencia pendiente')}</span>
             </div>
           )}
         </div>
@@ -3443,7 +3441,7 @@ function EvidenceModal({ movement, registeredBy, onClose }: { movement: Movement
             <span>{movement.solicitante || movement.cargo || 'Sin responsable'} | {registeredBy || movement.usuario || 'Sin usuario'} | {movement.fecha || 'Sin fecha'}</span>
           </div>
           {canPreview && (
-            <a className="evidence-link" href={movement.fotoUrl} target="_blank" rel="noreferrer">
+            <a className="evidence-link" href={imageUrl} target="_blank" rel="noreferrer">
               <ExternalLink size={15} />
               Abrir
             </a>

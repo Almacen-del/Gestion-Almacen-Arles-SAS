@@ -107,7 +107,7 @@ function toDate(value: unknown) {
   return value instanceof Timestamp ? value.toDate() : null;
 }
 
-function readMonthlySummary(period: string, data: Record<string, unknown>): MonthlyValuationSummary {
+export function readMonthlySummary(period: string, data: Record<string, unknown>): MonthlyValuationSummary {
   const summary = data.resumen && typeof data.resumen === 'object'
     ? data.resumen as Record<string, unknown>
     : {};

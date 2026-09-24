@@ -34,13 +34,14 @@ function MovementDetails({ rows }: { rows: readonly MonthlyActivityRow[] }) {
   </>;
 }
 
-export default function MonthlyActivityPanel({ view, summary, items, sources, itemsReady, historyReady }: {
+export default function MonthlyActivityPanel({ view, summary, items, sources, itemsReady, historyReady, loadActivity=loadMonthlyActivity }: {
   view: 'movements' | 'expense';
   summary: MonthlyValuationSummary;
   items: MonthlyValuationItem[];
   sources: readonly MonthlyActivitySource[];
   itemsReady: boolean;
   historyReady: boolean;
+  loadActivity?: typeof loadMonthlyActivity;
 }) {
   const [stored, setStored] = useState<MonthlyActivitySnapshot | null>(null);
   const [error, setError] = useState('');
@@ -55,11 +56,11 @@ export default function MonthlyActivityPanel({ view, summary, items, sources, it
     let active = true;
     setStored(null);
     setError('');
-    if (summary.activity) void loadMonthlyActivity(summary.activity)
+    if (summary.activity) void loadActivity(summary.activity)
       .then((snapshot) => { if (active) setStored(snapshot); })
       .catch((cause) => { console.error('No se pudo cargar la actividad del corte:', cause); if (active) setError('No se pudo verificar el detalle guardado. Vuelve a abrir esta vista para reintentar.'); });
     return () => { active = false; };
-  }, [summary]);
+  }, [summary,loadActivity]);
 
   const reconstructed = useMemo(() => {
     if (summary.activity || !itemsReady || !historyReady || !summary.createdAt) return null;

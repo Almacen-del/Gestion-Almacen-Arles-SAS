@@ -75,15 +75,15 @@ describe('lotes de agroquímicos', () => {
     });
   });
 
-  it('no propone despachar lotes vencidos', () => {
+  it('incluye lotes vencidos y conserva primero el vencimiento más antiguo', () => {
     const result = allocateAgrochemicalExitFefo([
       lot('vencido', '2026-08-19', 8),
       lot('vigente', '2027-01-10', 2),
     ], 4, '2026-08-20');
     expect(result.allocations).toEqual([
-      { lotId: 'vigente', lotNumber: 'vigente', expirationDate: '2027-01-10', quantity: 2 },
+      { lotId: 'vencido', lotNumber: 'vencido', expirationDate: '2026-08-19', quantity: 4 },
     ]);
-    expect(result.shortage).toBe(2);
+    expect(result.shortage).toBe(0);
   });
 
   it('identifica una entrada móvil pendiente y evita asignarla dos veces', () => {

@@ -115,7 +115,6 @@ export function allocateAgrochemicalExitFefo(
   const allocations: FefoAllocation[] = [];
   const eligibleLots = sortAgrochemicalLotsByFefo(lots).filter((lot) => (
     lot.quantity > 0
-    && classifyAgrochemicalLot(lot, cutoffDate) !== 'expired'
     && classifyAgrochemicalLot(lot, cutoffDate) !== 'missing-date'
   ));
   eligibleLots.forEach((lot) => {
@@ -157,6 +156,7 @@ function normalizeModule(value: string) {
 export function buildAgrochemicalEntryQueue(
   entries: readonly AgrochemicalStockEntry[],
   lots: readonly AgrochemicalLot[],
+  confirmedAssignments?:Readonly<Record<string,number>>,
 ) {
   const assignedByEntry = new Map<string, number>();
   lots.forEach((lot) => lot.entryAssignments.forEach((assignment) => {
@@ -168,7 +168,7 @@ export function buildAgrochemicalEntryQueue(
   return entries
     .filter((entry) => normalizeModule(entry.moduleName).includes('AGROQUIMICO'))
     .map((entry): AgrochemicalPendingEntry => {
-      const assignedQuantity = assignedByEntry.get(entry.id) ?? 0;
+      const assignedQuantity = confirmedAssignments?.[entry.id] ?? assignedByEntry.get(entry.id) ?? 0;
       const pendingQuantity = Math.max(0, entry.quantity - assignedQuantity);
       const invalid = Boolean(entry.validationIssue)
         || !entry.productDocumentId

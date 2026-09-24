@@ -24,6 +24,7 @@
     "verify:web": "npm run test && npm run build && npm run verify:release"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.1",
     "exceljs": "^4.4.0",
     "firebase": "^12.16.0",
     "jszip": "3.10.1",

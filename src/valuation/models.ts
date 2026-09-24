@@ -3,6 +3,7 @@ export type ValuationSaveState = 'saving' | 'saved' | 'error' | 'conflict';
 export type ValuationFilter = 'all' | 'valued' | 'unvalued';
 
 export type CurrentValuationRow = {
+  productDocumentId?:string;
   valuationId: string;
   moduleName: string;
   code: string;

@@ -333,7 +333,8 @@ export function buildMonthlyActivity(
     const [collection, ...idParts] = row.valuationId.split('__');
     const documentId = decodeURIComponent(idParts.join('__'));
     return {
-      id: `${collection === 'productos_aseo' ? 'aseo-' : collection === 'herramientas' ? 'herramienta-' : ''}${documentId}`,
+      valuationId:row.valuationId,
+      id: row.productDocumentId??`${collection === 'productos_aseo' ? 'aseo-' : collection === 'herramientas' ? 'herramienta-' : ''}${documentId}`,
       module: row.moduleName, code: row.code, name: row.product,
       reference: row.reference, category: '', unit: row.unit,
     };

@@ -50,6 +50,7 @@ export default function AgrochemicalExpirationModal({
   products,
   lots,
   entries,
+  confirmedAssignments,
   loading,
   sourceError,
   onRegister,
@@ -60,6 +61,7 @@ export default function AgrochemicalExpirationModal({
   products: AgrochemicalExpirationProduct[];
   lots: AgrochemicalLot[];
   entries: AgrochemicalStockEntry[];
+  confirmedAssignments?:Readonly<Record<string,number>>;
   loading: boolean;
   sourceError: string;
   onRegister: (registration: AgrochemicalLotRegistration) => Promise<void>;
@@ -96,7 +98,7 @@ export default function AgrochemicalExpirationModal({
     [products],
   );
   const sortedLots = useMemo(() => sortAgrochemicalLotsByFefo(lots), [lots]);
-  const entryQueue = useMemo(() => buildAgrochemicalEntryQueue(entries, lots), [entries, lots]);
+  const entryQueue = useMemo(() => buildAgrochemicalEntryQueue(entries, lots,confirmedAssignments), [entries, lots,confirmedAssignments]);
   const pendingEntries = entryQueue.filter((entry) => entry.assignmentStatus !== 'assigned');
   const selectedEntry = entryQueue.find((entry) => entry.id === selectedEntryId);
   const lotQuantityByProduct = useMemo(() => {

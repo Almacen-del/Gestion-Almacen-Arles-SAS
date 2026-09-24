@@ -3,6 +3,7 @@ import { classifyInventoryMovementType } from './engine';
 import type { InventoryAnalysisMovement, InventoryAnalysisProduct } from './models';
 
 export type InventoryAnalysisSourceProduct = {
+  valuationId?:string;
   id: string;
   module: string;
   code: string;
@@ -86,7 +87,7 @@ export function adaptInventoryAnalysisSources(
 
   sourceProducts.forEach((sourceProduct) => {
     const source = sourceForProductId(sourceProduct.id);
-    const id = stableProductId(source.collection, source.documentId);
+    const id = sourceProduct.valuationId??stableProductId(source.collection, source.documentId);
     const product: InventoryAnalysisProduct = {
       id,
       code: sourceProduct.code,
@@ -101,6 +102,7 @@ export function adaptInventoryAnalysisSources(
     };
     productByStableId.set(id, product);
     addLookup(productByDocumentId, `${source.collection}|${source.documentId}`, id);
+    if(sourceProduct.valuationId)addLookup(productByDocumentId,`${sourceCollectionForModule(sourceProduct.module)}|${sourceProduct.id}`,id);
     addLookup(productByCode, codeKey(sourceProduct.module, sourceProduct.code), id);
     addLookup(productByDescription, descriptionKey(
       sourceProduct.module,

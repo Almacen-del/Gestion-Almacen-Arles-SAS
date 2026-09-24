@@ -1,32 +1,41 @@
-# Control de temperatura y humedad
+# Control ambiental de Bodega Azul
 
-Implementación local en la versión Supabase del panel. En Agroquímicos, el botón **Temperatura y humedad** abre una ventana con las últimas 500 mediciones confirmadas de todas las ubicaciones o de la seleccionada. Muestra responsable, fecha/hora de Colombia, temperatura, humedad y observaciones. Se actualiza cada 30 segundos y manualmente. Si falla la consulta o se revoca el acceso, retira los resultados anteriores.
+En Agroquímicos → Temperatura y humedad, la web permite registrar una medición AM y una PM por fecha de Colombia. Administradores y gestores registran; lectores consultan. La aplicación Android conserva su RPC original y comparte el mismo historial.
 
-La captura está en la aplicación nueva `C:/Users/Almacen/AndroidStudioProjects/ControlAmbientalArles`. La web consulta; la app registra manualmente. No existe integración nueva con Firebase.
+## Criterios y alcance
+
+Las 49 fichas proceden de `Arles_Bodega_Azul_almacenamiento_4_por_hoja.pdf`, SHA256 `f783f6ee343d255008aa00f5e3f1831e27daf8418eb1352f3e130ae451b91cd8`. Cada producto conserva código, nombre, página, instrucciones y referencias HDS. No se modifica el PDF original.
+
+- NEMACYL: máximo 32 °C y máximo 78 % HR (inclusive).
+- YODOSAFER SL: 4–30 °C; humedad sin porcentaje.
+- KUMULUS WG: máximo 40 °C; humedad sin porcentaje.
+- STIMPLEX: la mención −15 °C permanece como texto de la ficha, pendiente de confirmar formulación. No se usa como límite validado.
+- Parámetros sin rango numérico confirmado: objetivo interno provisional 5–30 °C y HR <60 %. El rango térmico es una selección operativa, NO un estándar de FAO/EPA. El 60 % es una referencia ambiental para humedad en edificios, NO un límite validado para conservación de agroquímicos. Los límites específicos tienen prioridad; no se añade un mínimo a una ficha que solo especifica máximo.
+
+Fuentes generales consultadas el 24/09/2026:
+- FAO, ambiente fresco, seco y ventilado: https://www.fao.org/4/v8966e/v8966e.htm
+- EPA, humedad en edificios <60 %: https://www.epa.gov/mold/brief-guide-mold-moisture-and-your-home
+- EPA, prioridad de instrucciones del producto: https://www.epa.gov/safepestcontrol/storing-pesticides-safely
+
+La evaluación distingue fuera de criterio, dentro de límites de la ficha, dentro de referencia orientativa y criterio incompleto. Describe condiciones ambientales del catálogo del PDF, no daño ni certificación de calidad, ni confirma existencias físicas por lectura. Las advertencias de formulación permanecen visibles al desplegar cada producto.
+
+## Historial y gráficos
+
+Gráficos semanales (lunes–domingo) y mensuales, todos los productos o uno, temperatura y humedad separadas, mínimos/promedios/máximos y barras de condiciones por registro. Los puntos son mediciones reales; no se rellenan faltantes ni se interpolan intervalos mayores a 18 horas. Tabla con responsable, observaciones, fecha y evaluación.
+
+Consulta al abrir, cambiar periodo, guardar o pulsar Actualizar registros; no recarga automática del formulario. Una falla transitoria conserva la consulta anterior con aviso; denegación de acceso la retira.
 
 ## Base de datos
 
-Migración: `supabase/migrations/202609240014_agrochemical_climate.sql`.
+`202609240014_agrochemical_climate.sql`: captura móvil y tabla original.
+`202609240017_climate_dashboard.sql`: criterios versionados privados con RLS, trigger de asignación de versión, consulta por rango y captura web. Aplicada al proyecto `gfgsnnweyfryfcqdnlvw`.
 
-- Nueva tabla `agrochemical_climate_readings`, RLS forzado y sin permisos directos para anon/authenticated.
-- `climate_record_reading`: únicamente operadores activos, validación en servidor, responsable derivado de Auth, fecha de recepción del servidor y UUID de captura para reintentos idempotentes. No permite actualizar ni borrar.
-- `climate_readings_page`: requiere el acceso web existente; filtro de ubicación aplicado en servidor y máximo 500 filas por consulta.
-- El control ambiental es independiente del indicador operativo del inventario. No altera productos, existencias, movimientos, usuarios ni los permisos de otros módulos.
-- No se definen rangos aceptables, alarmas ni conclusiones sobre conservación de productos.
+Los criterios de cada versión no se pueden actualizar/borrar; añadir una nueva versión para cambios futuros. Cada captura nueva (web/Android) obtiene su versión del servidor. Las mediciones anteriores conservan versión nula y se rotulan evaluación retrospectiva. No hay API de editar/borrar mediciones. Guardado con UUID, validaciones y exclusión por fecha/turno; reintentos idénticos son idempotentes. Acceso web usa `web_require_access`; no otorga permisos de operador móvil.
 
 ## Verificación
 
-```powershell
-$env:PGLITE_MODULE = "$PWD/outputs/climate-tools/node_modules/@electric-sql/pglite/dist/index.js"
-node scripts/supabase/verify-climate.mjs
-npx vitest run src/ui/AgrochemicalClimateModal.test.tsx src/ui/SupabasePanelShell.test.tsx
-npm run build
-```
+- `npm exec vitest run -- src/backend/supabase/climate.test.ts src/ui/AgrochemicalClimateModal.test.tsx`
+- Configurar `PGLITE_MODULE` a la instalación local y ejecutar `node scripts/supabase/verify-climate-dashboard.mjs`.
+- `npm run build` y `npm run verify:release`.
 
-El script SQL necesita PGlite instalado en la ruta indicada o una ruta equivalente. Prueba rechazo anónimo, validaciones, reintento idéntico, conflicto de ID, suplantación de otro actor, revocación, filtros y bloqueo del acceso directo. Las pruebas usan datos ficticios en bases locales; no insertan datos en producción.
-
-## Pendiente de publicación
-
-La migración se entrega sin aplicar a la base remota. Debe verificarse el destino `gfgsnnweyfryfcqdnlvw`, aplicar esa única migración y publicar el panel Supabase tras autorizar la publicación. Luego comprobar el flujo Android → Supabase → web con una medición real autorizada. No publicar indiscriminadamente todos los cambios pendientes de esta carpeta de trabajo.
-
-La compilación web mantiene las advertencias preexistentes de tamaño de bundles/importación mixta. La app utiliza una APK debug para revisión y conserva advertencias de compatibilidad futura de Gradle.
+Pruebas locales: permisos, roles, revocación, 49 códigos únicos, criterios históricos, compatibilidad Android, límites exactos, fechas Colombia, duplicados y reintentos. Verificación UI con lectura real existente; borradores de prueba no guardados. No se añaden mediciones ficticias en producción. Persisten advertencias preexistentes de tamaño de bundles/importación mixta.

@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { colombiaDateTime } from '../backend/supabase/climate';
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
+const { rpc, downloadClimateMonth } = vi.hoisted(() => ({ rpc: vi.fn(), downloadClimateMonth: vi.fn() }));
+vi.mock('../platform/climateTemplateExport', () => ({ downloadClimateMonth }));
 vi.mock('../backend/supabase/runtime', () => ({ webSupabaseClient: () => ({ rpc }) }));
 import AgrochemicalClimateModal from './AgrochemicalClimateModal';
 const criteria = { version: 'v1', source: 'fichas.pdf', reference: null, rules: [{ code: 'BIO006', name: 'NEMACYL', t_min: null, t_max: 32, h_max: 78, page: 1, details: 'Ficha validada' }] };
@@ -50,4 +51,17 @@ it('readers cannot submit and missing readings are not plotted as zero', async (
   expect(screen.queryByText('Guardar medición')).toBeNull();
   expect(screen.queryAllByRole('img')).toHaveLength(0);
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }); expect(close).toHaveBeenCalledOnce();
+});
+
+it('queries one day but exports the entire selected month independently of the product filter', async () => {
+  render(<AgrochemicalClimateModal onClose={vi.fn()} />);
+  await screen.findByText('Operador de prueba');
+  fireEvent.change(screen.getByLabelText('Periodo'), { target: { value: 'day' } });
+  fireEvent.change(screen.getByLabelText('Fecha del periodo'), { target: { value: '2024-02-15' } });
+  fireEvent.change(screen.getByLabelText('Producto'), { target: { value: 'BIO006' } });
+  await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('climate_dashboard', { p_from: '2024-02-15', p_to: '2024-02-15' }));
+  await waitFor(() => expect(screen.getByText('Exportar historial mensual').hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByText('Exportar historial mensual'));
+  await waitFor(() => expect(downloadClimateMonth).toHaveBeenCalledWith('2024-02', dashboard.readings));
+  expect(rpc).toHaveBeenLastCalledWith('climate_dashboard', { p_from: '2024-02-01', p_to: '2024-02-29' });
 });

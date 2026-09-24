@@ -32,9 +32,10 @@ export function evaluateClimate(rule: ClimateRule, t: number, h: number, referen
   return { status, reasons };
 }
 export function colombiaDateTime(now = new Date()) { return new Date(now.getTime() - 5 * 3600000).toISOString().slice(0, 16); }
-export function climateRange(anchor: string, mode: 'week' | 'month') {
+export function climateRange(anchor: string, mode: 'day' | 'week' | 'month') {
   const date = new Date(`${anchor}T12:00:00Z`);
   if (!Number.isFinite(date.getTime())) return climateRange(colombiaDateTime().slice(0, 10), mode);
+  if (mode === 'day') return { from: anchor, to: anchor };
   if (mode === 'week') date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
   else date.setUTCDate(1);
   const from = date.toISOString().slice(0, 10);

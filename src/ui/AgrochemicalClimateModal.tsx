@@ -49,7 +49,11 @@ function ClimateChart({ readings, metric, rule, criteria, from, to }: { readings
       {limits.map(l => <g key={l.label}><line x1="48" x2="610" y1={y(l.value)} y2={y(l.value)} stroke="#a45c00" strokeDasharray="5 4" /><text x="605" y={y(l.value) - 5} textAnchor="end">{l.label}</text></g>)}
       {readings.map((r, i) => <g key={r.id}>{i > 0 && new Date(r.measured_at).getTime() - new Date(readings[i - 1].measured_at).getTime() <= 18 * 3600000 && <line x1={x(readings[i - 1])} y1={y(Number(readings[i - 1][metric]))} x2={x(r)} y2={y(Number(r[metric]))} stroke={temperature ? '#157f55' : '#2874a6'} strokeWidth="2" />}
         <circle cx={x(r)} cy={y(Number(r[metric]))} r="4" fill={temperature ? '#157f55' : '#2874a6'}><title>{time(r.measured_at)} · {r.period}: {number(r[metric])} {temperature ? '°C' : '%'}</title></circle></g>)}
-      <text x="48" y="195">{from}</text><text x="610" y="195" textAnchor="end">{to}</text>
+      {Array.from({ length: from === to ? 5 : Math.round((end - start) / 86400000) }, (_, i) => {
+        const instant = from === to ? start + i * 6 * 3600000 : start + (i + .5) * 86400000;
+        const px = 48 + (instant - start) / (end - start) * 550;
+        return <g key={i}><line x1={px} x2={px} y1="173" y2="178" stroke="#84978c" /><text x={px} y="195" textAnchor="middle" fontSize="10">{from === to ? `${String(i * 6).padStart(2, '0')}:00` : new Date(instant).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: '2-digit' })}</text></g>;
+      })}
     </svg><small>Mín. {number(Math.min(...values))} · Promedio {number(values.reduce((a, b) => a + b, 0) / values.length)} · Máx. {number(Math.max(...values))}</small></>}
   </section>;
 }
@@ -70,8 +74,10 @@ function ProductHistoryChart({ readings, dashboard, code, metric }: { readings: 
 
 export default function AgrochemicalClimateModal({ onClose }: { onClose: () => void }) {
   const [dashboard, setDashboard] = useState<ClimateDashboard | null>(null);
-  const [mode, setMode] = useState<'week' | 'month'>('week');
+  const [mode, setMode] = useState<'day' | 'week' | 'month'>('week');
   const [anchor, setAnchor] = useState(colombiaDateTime().slice(0, 10));
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -90,6 +96,20 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
     }).catch(() => { if (active) setError('No se pudo consultar el control ambiental. Intenta actualizar.'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [range.from, range.to, refreshKey]);
+  async function exportMonth() {
+    if (exporting) return;
+    setExporting(true); setExportMessage('');
+    const month = anchor.slice(0, 7);
+    const fullMonth = climateRange(`${month}-01`, 'month');
+    try {
+      const { data, error: problem } = await webSupabaseClient().rpc('climate_dashboard', { p_from: fullMonth.from, p_to: fullMonth.to });
+      if (problem || !data) throw new Error('No se pudo consultar el mes completo. Verifica la conexión y los permisos.');
+      const { downloadClimateMonth } = await import('../platform/climateTemplateExport');
+      await downloadClimateMonth(month, (data as ClimateDashboard).readings);
+      setExportMessage(`Historial de ${month} exportado.`);
+    } catch (problem) { setExportMessage(problem instanceof Error ? problem.message : 'No se pudo exportar el historial mensual.'); }
+    finally { setExporting(false); }
+  }
   const criteria = dashboard?.criteria.find(c => c.version === dashboard.current_version);
   const readings = (dashboard?.readings ?? []).filter(r => r.reading_date >= range.from && r.reading_date <= range.to);
   const rule = criteria?.rules.find(r => r.code === code);
@@ -106,11 +126,13 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
         {criteria.reference ? <><p><b>Referencia preventiva interna:</b> {criteria.reference.t_min}–{criteria.reference.t_max} °C y humedad menor al {criteria.reference.h_max} %. Solo completa parámetros sin límite numérico confirmado. Los límites de la ficha tienen prioridad.</p><p>{criteria.reference.note}</p>{criteria.reference.sources.map(s => <p key={s.url}><a href={s.url} target="_blank" rel="noreferrer">{s.title}</a></p>)}</> : <p>Donde no existe límite numérico confirmado se muestra «Criterio incompleto».</p>}
         <p>Se conservan las advertencias de formulación. Los gráficos no rellenan lecturas faltantes. Una medición por mañana y por tarde.</p></details>}
       <section><h3>Gráficos e historial</h3><div className="climate-fields">
-        <label>Periodo<select value={mode} onChange={e => setMode(e.target.value as 'week' | 'month')}><option value="week">Semana</option><option value="month">Mes</option></select></label>
+        <label>Periodo<select value={mode} onChange={e => setMode(e.target.value as 'day' | 'week' | 'month')}><option value="day">Día</option><option value="week">Semana</option><option value="month">Mes</option></select></label>
         <label>Fecha del periodo<input type="date" value={anchor} onChange={e => { if (e.target.value) setAnchor(e.target.value); }} /></label>
         <label>Producto<select value={code} onChange={e => setCode(e.target.value)}><option value="">Todos los productos</option>{criteria?.rules.map(r => <option key={r.code} value={r.code}>{r.code} · {r.name}</option>)}</select></label>
         <button type="button" disabled={loading} onClick={() => setRefreshKey(v => v + 1)}>Actualizar registros</button>
       </div><p>{range.from} a {range.to} · {readings.length} mediciones. {code ? 'Límites actuales del producto seleccionado.' : 'La temperatura y humedad de la bodega son comunes a todos los productos.'}</p>
+      <div className="climate-export"><button type="button" disabled={exporting || loading || !dashboard} onClick={() => void exportMonth()}>{exporting ? 'Exportando…' : 'Exportar historial mensual'}</button><small>Excel MP-F-010 · Mes completo: {anchor.slice(0, 7)} · Todas las lecturas de Bodega Azul</small></div>
+      {exportMessage && <p role="status">{exportMessage}</p>}
       {loading && <p role="status">Consultando mediciones…</p>}
       <div className="climate-charts"><ClimateChart readings={readings} metric="temperature_c" rule={rule} criteria={criteria} {...range} /><ClimateChart readings={readings} metric="humidity_percent" rule={rule} criteria={criteria} {...range} /></div>
       {dashboard && <div className="climate-separated"><ProductHistoryChart readings={readings} dashboard={dashboard} code={code} metric="temperature" /><ProductHistoryChart readings={readings} dashboard={dashboard} code={code} metric="humidity" /></div>}

@@ -58,3 +58,5 @@
 .climate-bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; }
 .climate-bar span { display: block; color: white; font-size: .75rem; text-align: center; line-height: 22px; }
 @media (max-width: 750px) { .climate-fields, .climate-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } .climate-charts { grid-template-columns: 1fr; } .climate-product summary { align-items: start; flex-direction: column; } }
+
+.climate-export { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:12px 0; }

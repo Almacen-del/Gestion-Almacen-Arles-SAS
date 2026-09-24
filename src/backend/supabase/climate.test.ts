@@ -32,6 +32,7 @@ describe('environmental criteria', () => {
     expect(evaluateClimate(rule, NaN, 50, reference).status).toBe('unknown');
   });
   it('keeps Monday/Sunday weeks, leap months and Colombian midnight boundaries', () => {
+    expect(climateRange('2026-01-01', 'day')).toEqual({ from: '2026-01-01', to: '2026-01-01' });
     expect(climateRange('2026-01-01', 'week')).toEqual({ from: '2025-12-29', to: '2026-01-04' });
     expect(climateRange('2024-02-15', 'month')).toEqual({ from: '2024-02-01', to: '2024-02-29' });
     expect(colombiaDateTime(new Date('2026-09-24T04:59:00Z'))).toBe('2026-09-23T23:59');

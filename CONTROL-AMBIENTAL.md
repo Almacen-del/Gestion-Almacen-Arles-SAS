@@ -39,3 +39,6 @@ Los criterios de cada versión no se pueden actualizar/borrar; añadir una nueva
 - `npm run build` y `npm run verify:release`.
 
 Pruebas locales: permisos, roles, revocación, 49 códigos únicos, criterios históricos, compatibilidad Android, límites exactos, fechas Colombia, duplicados y reintentos. Verificación UI con lectura real existente; borradores de prueba no guardados. No se añaden mediciones ficticias en producción. Persisten advertencias preexistentes de tamaño de bundles/importación mixta.
+
+## Vista diaria y exportación mensual
+El selector permite Día, Semana y Mes. Los gráficos marcan cada día y muestran horas en la vista diaria. Exportar historial mensual consulta nuevamente el mes completo de la fecha seleccionada, independientemente del producto y del periodo visible. Usa la plantilla MP-F-010 original, con AM en Hora 1 y PM en Hora 2 (hora de Colombia), conserva ceros reales y deja faltantes vacíos. El nombre del equipo queda sin completar porque no se registra ese dato. No crea mediciones ni altera el historial. Pruebas: rangos diarios, febrero bisiesto, exportación del mes completo, turnos, ceros, faltantes, duplicados y conservación de partes OOXML.

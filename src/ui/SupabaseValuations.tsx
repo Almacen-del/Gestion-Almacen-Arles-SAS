@@ -1,3 +1,4 @@
+import {canRefreshInBackground} from '../backend/supabase/refresh';
 import type {PanelSnapshot} from '../backend/supabase/panel';
 import {panelMonthlySources} from '../backend/supabase/monthlySources';
 import {buildMonthlyActivity,summarizeMonthlyActivity} from '../valuation/monthlyActivity';
@@ -15,7 +16,7 @@ import {CurrentValuationView} from './InventoryValuationModule';
 import ValuationEditModal from './ValuationEditModal';
 import {signInToWeb} from '../backend/supabase/client';
 import {webSupabaseClient} from '../backend/supabase/runtime';
-import {WebAdministration,currentValuationRows,type WebAccess,type ValuationCatalogRow,type ManualValuationRequest} from '../backend/supabase/administration';
+import {WebAdministration,WebAccessDenied,currentValuationRows,type WebAccess,type ValuationCatalogRow,type ManualValuationRequest} from '../backend/supabase/administration';
 import {createInitialFirestoreSourceStates} from '../valuation/firestoreSync';
 import type {ManualValuationConflict} from '../valuation/manualValuation';
 import type {ValuationSaveState} from '../valuation/models';
@@ -47,6 +48,7 @@ export default function SupabaseValuations({client:providedClient,snapshot}:{cli
   const pending=useRef<ManualValuationRequest|null>(null);
   const saving=useRef(false);
   const generation=useRef(0);
+  const refreshActive=useRef(false);
   const activeUid=useRef<string|null>(null);
 
   useEffect(()=>{
@@ -66,12 +68,13 @@ export default function SupabaseValuations({client:providedClient,snapshot}:{cli
     return()=>{alive=false;generation.current++;data.subscription.unsubscribe();window.removeEventListener('online',update);window.removeEventListener('offline',update);};
   },[client]);
 
-  const refresh=useCallback(async()=>{
-    const uid=activeUid.current;if(!uid)return;
-    const ticket=++generation.current;setLoading(true);setError('');
+  const refresh=useCallback(async(background=false)=>{
+    const uid=activeUid.current;if(!uid || (background&&refreshActive.current))return;
+    refreshActive.current=true;
+    const ticket=++generation.current;if(!background)setLoading(true);setError('');
     try{
       const profile=await api.access();
-      if(profile.user_id!==uid)throw new Error('La sesión no corresponde al perfil del panel.');
+      if(profile.user_id!==uid)throw new WebAccessDenied('La sesión no corresponde al perfil del panel.');
       const next=await api.catalog();currentValuationRows(next);
       if(ticket!==generation.current || activeUid.current!==uid)return;
       setAccess(profile);setCatalog(next);
@@ -79,19 +82,19 @@ export default function SupabaseValuations({client:providedClient,snapshot}:{cli
         const [entryRows,values]=await Promise.all([entriesApi.catalog(),entriesApi.values()]);
         if(ticket!==generation.current || activeUid.current!==uid)return;
         setEntries(entryRows);setEntryValues(values);setEntriesError('');
-      } catch {if(ticket===generation.current){setEntries([]);setEntryValues({});setEntriesError('No se pudieron consultar las entradas por valorar.');}}
+      } catch {if(ticket===generation.current){if(!background){setEntries([]);setEntryValues({});}setEntriesError('No se pudieron actualizar las entradas por valorar.');}}
     }catch(error){
       if(ticket!==generation.current || activeUid.current!==uid)return;
-      setAccess(null);setCatalog([]);setSelected(null);pending.current=null;
+      if(!background || error instanceof WebAccessDenied){setAccess(null);setCatalog([]);setSelected(null);pending.current=null;}
       setError(error instanceof Error?error.message:'No se pudo consultar Supabase.');
-    }finally{if(ticket===generation.current)setLoading(false);}
+    }finally{if(ticket===generation.current){refreshActive.current=false;if(!background)setLoading(false);}}
   },[api,entriesApi]);
 
   useEffect(()=>{
     generation.current++;setAccess(null);setCatalog([]);setSelected(null);setEntries([]);setEntryValues({});entryWrites.current.clear();pending.current=null;
     if(!session?.user.id)return;
     void refresh();
-    const timer=window.setInterval(()=>{if(navigator.onLine && !saving.current)void refresh();},60000);
+    const timer=window.setInterval(()=>{if(canRefreshInBackground() && !saving.current)void refresh(true);},60000);
     return()=>{generation.current++;window.clearInterval(timer);};
   },[session?.user.id,refresh]);
 

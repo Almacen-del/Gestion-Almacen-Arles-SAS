@@ -1,10 +1,11 @@
+import {canRefreshInBackground} from '../backend/supabase/refresh';
 import {useEffect,useState,useCallback,useRef,type FormEvent} from 'react';
 import type {Session,SupabaseClient} from '@supabase/supabase-js';
 import type {User} from 'firebase/auth';
 import {AppShell} from '../App';
 import {webSupabaseClient} from '../backend/supabase/runtime';
 import {signInToWeb} from '../backend/supabase/client';
-import {WebAdministration,type WebAccess} from '../backend/supabase/administration';
+import {WebAdministration,WebAccessDenied,type WebAccess} from '../backend/supabase/administration';
 import {loadPanelSnapshot,type PanelSnapshot} from '../backend/supabase/panel';
 import {EntryAdministration} from '../backend/supabase/entries';
 
@@ -40,19 +41,19 @@ export default function SupabasePanel({client:provided}:{client?:SupabaseClient}
       setBusy(true);
       try{
         const access=await new WebAdministration(client).access();
-        if(access.user_id!==uid)throw new Error('La sesión cambió. Vuelve a ingresar.');
+        if(access.user_id!==uid)throw new WebAccessDenied('La sesión cambió. Vuelve a ingresar.');
         const snapshot=await loadPanelSnapshot(client);
         const api=new EntryAdministration(client);
         const [entries,values]=await Promise.all([api.catalog(),api.values()]);
         snapshot.entries=entries.map(entry=>({...entry,productId:[...snapshot.inventory,...snapshot.aseo].find(p=>p.valuationId===entry.valuationId)?.id??entry.productId}));
         snapshot.entryValues=values;
         if(alive){setData({access,snapshot});setError('');}
-      }catch(e){if(alive){setData(null);setError(e instanceof Error?e.message:'No se pudo consultar el panel.');}}
+      }catch(e){if(alive){if(e instanceof WebAccessDenied)setData(null);setError(e instanceof Error?e.message:'No se pudo actualizar el panel. Se conserva la última consulta.');}}
       finally{if(alive)setBusy(false);}
     }
     refreshAction.current=refresh;
     void refresh();
-    const timer=window.setInterval(()=>{if(navigator.onLine)void refresh();},60000);
+    const timer=window.setInterval(()=>{if(canRefreshInBackground())void refresh();},60000);
     const online=()=>void refresh();window.addEventListener('online',online);
     return()=>{alive=false;refreshAction.current=async()=>{};window.clearInterval(timer);window.removeEventListener('online',online);};
   },[client,session?.user.id,attempt]);
@@ -76,7 +77,7 @@ export default function SupabasePanel({client:provided}:{client?:SupabaseClient}
   </form></main>;
   if(!data)return <main className="loading-screen"><p role={error?'alert':'status'}>{error||'Cargando inventario e historial…'}</p>
     {!busy&&<><button onClick={()=>setAttempt(n=>n+1)}>Reintentar</button><form onSubmit={requestAccess}><label>Nombre<input required maxLength={160} value={name} onChange={e=>setName(e.target.value)}/></label><label>Cargo<input maxLength={160} value={job} onChange={e=>setJob(e.target.value)}/></label><button>Solicitar acceso al panel</button></form></>}<button onClick={()=>void logout()}>Cerrar sesión</button></main>;
-  return <>{!data.access.operational&&<div role="status" style={{padding:'8px 20px',background:'#fff2ca'}}>Supabase · revisión de integración. Las operaciones pendientes permanecen bloqueadas.</div>}
+  return <>{error&&<div role="status" className="form-error">{error} Se conserva la última consulta; se reintentará automáticamente.</div>}{!data.access.operational&&<div role="status" style={{padding:'8px 20px',background:'#fff2ca'}}>Supabase · revisión de integración. Las operaciones pendientes permanecen bloqueadas.</div>}
     <AppShell key={session.user.id} user={{uid:session.user.id,email:session.user.email??null,displayName:data.access.display_name} as User}
       supabase={{...data,logout:()=>void logout(),refresh}}/>
   </>;

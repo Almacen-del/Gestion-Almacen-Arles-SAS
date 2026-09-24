@@ -30,13 +30,15 @@ function isPrice(value:unknown):value is number {
   return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=999_999_999_999;
 }
 
+export class WebAccessDenied extends Error {}
+
 export class WebAdministration {
   constructor(private readonly client:RpcClient){}
 
   private async call(name:string,args:Record<string,unknown>={}) {
     const {data,error}=await this.client.rpc(name,args);
     if(error) {
-      if(error.code==='42501') throw new Error('Tu usuario no tiene acceso al panel.');
+      if(error.code==='42501') throw new WebAccessDenied('Tu usuario no tiene acceso al panel.');
       throw new Error('No se pudo confirmar la operación en Supabase. Actualiza o reintenta la misma operación.');
     }
     return data as unknown;

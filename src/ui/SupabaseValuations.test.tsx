@@ -86,3 +86,26 @@ describe('Supabase connected valuation screen',()=>{
   expect(screen.queryByText('Gafas de prueba')).toBeNull();
  });
 });
+
+it('refreshes in the background without showing a loading screen and pauses while typing',async()=>{
+ const callbacks:Array<()=>void>=[];
+ const originalTimer=window.setInterval.bind(window);
+ const timer=vi.spyOn(window,'setInterval').mockImplementation(((callback:()=>void,delay:number)=>{if(delay===60000)callbacks.push(callback);return originalTimer(callback,delay);}) as typeof window.setInterval);
+ try{
+  const c=connection();render(<SupabaseValuations client={c.client}/>);
+  await screen.findByTitle('Editar valor unitario de Gafas de prueba');
+  await waitFor(()=>expect((screen.getByRole('button',{name:'Actualizar'}) as HTMLButtonElement).disabled).toBe(false));
+  const search=screen.getByPlaceholderText('Buscar módulo, código, producto o referencia');
+  search.focus();fireEvent.change(search,{target:{value:'Gafas'}});
+  const before=c.rpc.mock.calls.length;callbacks[0]();expect(c.rpc.mock.calls.length).toBe(before);
+  search.blur();
+  let finish:(value:any)=>void=()=>{};
+  c.rpc.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}) as any);
+  callbacks[0]();
+  expect(screen.queryByText('Cargando valoración...')).toBeNull();
+  expect(screen.getByPlaceholderText('Buscar módulo, código, producto o referencia')).toBe(search);
+  expect((search as HTMLInputElement).value).toBe('Gafas');
+  finish({data:{user_id:uid,display_name:'Almacén',role:'ADMIN',operational:true},error:null});
+  await waitFor(()=>expect(c.rpc.mock.calls.length).toBeGreaterThan(before+1));
+ }finally{cleanup();timer.mockRestore();}
+});

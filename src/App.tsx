@@ -1,3 +1,4 @@
+import FuelEquipmentPanel from './ui/FuelEquipmentPanel';
 import AgrochemicalClimateModal from './ui/AgrochemicalClimateModal';
 import {WebOperations} from './backend/supabase/operations';
 import {WebAdministration,type ManualValuationRequest} from './backend/supabase/administration';
@@ -2646,6 +2647,8 @@ export function AppShell({ user, supabase }: { user: User; supabase?: {snapshot:
             ))}
           </section>
         )}
+
+        {module === 'Combustible' && supabase && <FuelEquipmentPanel movements={movements} />}
 
         {isTallerModule && (
           <div className="submodule-filter-row">

@@ -34,3 +34,8 @@ describe('existing panel Supabase mapping',()=>{
   expect(result.movements[0].observaciones).toContain('Cantidad no registrada');expect(result.movements[0].codigo).toBe('PV01');
  });
 });
+
+it('reads the current mobile fuel fields without losing equipment, readings or recipient',()=>{
+ const result=parsePanelSnapshot({...source(),movements:[{...position,module_id:'COMBUSTIBLE',id:'fuel',kind:'SALIDA',operator_name:'Almacen',stock_before_milli:2000,stock_after_milli:500,occurred_at:'2026-09-24T12:00:00Z',details:{machine:'planta eléctrica',plate:'Roja',meter:'16079.3',recipient:'Persona',task:'Energía',destination:'COP'}}]});
+ expect(result.movements[0]).toMatchObject({maquinaria:'planta eléctrica',placaSerial:'Roja',horometro:'16079.3',solicitante:'Persona',labor:'Energía',destinationLot:'COP'});
+});

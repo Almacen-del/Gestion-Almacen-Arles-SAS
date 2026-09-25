@@ -1,0 +1,15 @@
+.fuel-equipment { margin:16px 0; padding:16px; border:1px solid #c7ddce; border-radius:12px; background:#fff; color:#183b2b; }
+.fuel-equipment button { padding:10px 14px; border:1px solid #b9cebf; border-radius:8px; background:#f0f7f1; color:#185c3d; cursor:pointer; }
+.fuel-equipment p { font-size:.85rem; line-height:1.5; margin:12px 0; }
+.fuel-equipment-filters { display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:10px; align-items:end; }
+.fuel-equipment label { display:grid; gap:6px; font-size:.85rem; }
+.fuel-equipment input,.fuel-equipment select { min-width:0; width:100%; box-sizing:border-box; padding:9px; border:1px solid #b9cebf; border-radius:7px; background:white; color:#183b2b; }
+.fuel-equipment-summary { display:flex; flex-wrap:wrap; gap:20px; margin:16px 0; }
+.fuel-equipment-summary b { display:block; font-size:1.3rem; }
+.fuel-equipment-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+.fuel-equipment-cards article { padding:14px; border:1px solid #dce7de; border-radius:10px; background:#f6faf7; }
+.fuel-equipment-cards small { display:block; margin:7px 0; }
+.fuel-equipment-history { list-style:none; padding:0; display:grid; gap:10px; max-height:500px; overflow:auto; }
+.fuel-equipment-history li { display:grid; gap:5px; padding:12px; border:1px solid #dce7de; border-radius:8px; font-size:.85rem; overflow-wrap:anywhere; }
+.fuel-equipment-warning { color:#a03a16; }
+@media(max-width:750px){.fuel-equipment-filters{grid-template-columns:1fr 1fr;}}

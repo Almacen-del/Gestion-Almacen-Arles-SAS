@@ -48,11 +48,11 @@ function firstText(row:Row,...keys:string[]){for(const key of keys){const value=
 function details(row:Row):Row{return row.details && typeof row.details==='object'?object(row.details):{};}
 function movement(id:string,modulo:string,row:Row,extra:Partial<Movement>):Movement {
   return {id,modulo,tipo:text(row,'kind'),codigo:text(row,'code'),descripcion:text(row,'name'),referencia:text(row,'reference'),
-    cantidad:0,unidad:text(row,'unit_id')||'Unidad',fecha:text(row,'occurred_at'),solicitante:text(row,'solicitante')||text(row,'person'),
+    cantidad:0,unidad:text(row,'unit_id')||'Unidad',fecha:text(row,'occurred_at'),solicitante:text(row,'solicitante')||text(row,'person')||text(row,'recipient'),
     cargo:text(row,'cargo'),usuario:text(row,'operator_name'),observaciones:text(row,'observaciones')||text(row,'notes'),fotoUrl:photo(row),
-    ubicacion:firstText(row,'location_code','ubicacion'),zona:firstText(row,'zona_ejecucion','zona'),labor:firstText(row,'tipo_labor','labor','frente'),frente:firstText(row,'frente','labor_frente','frente_trabajo'),
-    maquinaria:firstText(row,'maquinaria','equipo','maquina','vehiculo'),horometro:firstText(row,'horometro','horómetro','horas','lectura_horometro'),placaSerial:firstText(row,'placa_serial','placaSerial','placa','serial'),
-    proveedor:firstText(row,'proveedor','nombre_proveedor'),responsableEntrega:firstText(row,'responsable_entrega','registradoPor'),entregaEntrada:text(row,'responsable_entrega'),usuarioUid:firstText(row,'operator_id','usuario_uid','registrado_por_uid'),destinationLot:firstText(row,'lote_destino','loteDestino','lote_aplicacion','loteAplicacion'),
+    ubicacion:firstText(row,'location_code','ubicacion'),zona:firstText(row,'zona_ejecucion','zona'),labor:firstText(row,'tipo_labor','labor','frente','task'),frente:firstText(row,'frente','labor_frente','frente_trabajo'),
+    maquinaria:firstText(row,'maquinaria','equipo','maquina','vehiculo','machine'),horometro:firstText(row,'horometro','horómetro','horas','lectura_horometro','meter'),placaSerial:firstText(row,'placa_serial','placaSerial','placa','serial','plate'),
+    proveedor:firstText(row,'proveedor','nombre_proveedor'),responsableEntrega:firstText(row,'responsable_entrega','registradoPor'),entregaEntrada:text(row,'responsable_entrega'),usuarioUid:firstText(row,'operator_id','usuario_uid','registrado_por_uid'),destinationLot:firstText(row,'lote_destino','loteDestino','lote_aplicacion','loteAplicacion','destination'),
     lote:firstText(row,'lot','numero_lote','lote','numeroLote'),lotesSalida:leerLotesSalidaReporte(row),fechaVencimiento:firstText(row,'fecha_vencimiento','fechaVencimiento','vencimiento'),monthlyOccurredAt:text(row,'occurred_at')||undefined,...extra};
 }
 

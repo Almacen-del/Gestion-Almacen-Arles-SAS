@@ -36,3 +36,5 @@
 .fuel-modal-header h2 { margin:4px 0 0; font-size:1.3rem; }.fuel-modal-header small{color:#496555;}
 .fuel-modal-body { padding:18px 22px; overflow-y:auto; min-height:0; }
 @media(max-width:560px){.fuel-modal-backdrop{padding:8px;}.fuel-equipment-modal{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);}.fuel-modal-header,.fuel-modal-body{padding:12px;}}
+
+.fuel-period-summary{margin:18px 0}.fuel-period-table{overflow-x:auto;margin:16px 0}.fuel-period-table table{width:100%;border-collapse:collapse;font-size:.85rem}.fuel-period-table caption{text-align:left;font-weight:700;padding:8px 0}.fuel-period-table th,.fuel-period-table td{text-align:left;padding:10px;border-bottom:1px solid #dce7de;white-space:nowrap}.fuel-period-table th{background:#f0f7f1}

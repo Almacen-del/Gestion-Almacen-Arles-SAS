@@ -1,3 +1,4 @@
+import FuelPeriodSummary from './FuelPeriodSummary';
 import FuelEquipmentCharts from './FuelEquipmentCharts';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {Movement} from '../backend/panelModels';
@@ -31,6 +32,7 @@ export default function FuelEquipmentPanel({movements}:{movements:Movement[]}) {
   <div className="fuel-equipment-summary"><span><b>{number(totals('ACPM'))} gal</b> ACPM entregado</span><span><b>{number(totals('Gasolina'))} gal</b> Gasolina entregada</span><span><b>{selected.filter(r=>r.warning).length}</b> registros por revisar o completar</span></div>
   <p>Los galones entregados no equivalen necesariamente al combustible consumido. El rendimiento requiere abastecimientos comparables de tanque lleno a tanque lleno.</p>
   <p>Solo se incluyen la camioneta blanca 221, las motos 21G/32H/46H, los tractores 1/3 y la planta roja. La camioneta gris, las motos del personal y los registros sin identificación suficiente permanecen en el historial general, fuera de estos totales.</p>
+  <FuelPeriodSummary rows={selected} stageRows={rows.filter(r=>scope==='history'?r.historical:!r.historical)} scope={scope} from={from} to={to}/>
   <FuelEquipmentCharts rows={selected} equipment={equipment}/>
   <div className="fuel-equipment-cards">{groups.filter(g=>equipment?g.key===equipment:g.identified).map(g=>{
    const data=selected.filter(r=>r.equipment.key===g.key);

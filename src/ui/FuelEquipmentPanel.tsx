@@ -7,6 +7,7 @@ import './fuelEquipment.css';
 const number=(n:number)=>n.toLocaleString('es-CO',{maximumFractionDigits:3});
 export default function FuelEquipmentPanel({movements}:{movements:Movement[]}) {
  const [scope,setScope]=useState('current'),[open,setOpen]=useState(false),[equipment,setEquipment]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState('');
+ const [exporting,setExporting]=useState(false),[exportError,setExportError]=useState('');
  const modal=useRef<HTMLElement>(null);
  useEffect(()=>{if(!open)return;const previous=document.activeElement as HTMLElement|null;modal.current?.focus();return ()=>previous?.focus();},[open]);
  const rows=useMemo(()=>fleetRows(movements).filter(r=>currentFuelFleet.some(g=>g.key===r.equipment.key)),[movements]);
@@ -28,6 +29,9 @@ export default function FuelEquipmentPanel({movements}:{movements:Movement[]}) {
    <label>Hasta<input type="date" aria-label="Maquinaria hasta" value={to} onInput={e=>setTo(e.currentTarget.value)}/></label>
    <button type="button" onClick={()=>{setFrom('');setTo('');setEquipment('');}}>Limpiar filtros</button>
   </div>
+  <button type="button" disabled={exporting||invalid} onClick={async()=>{setExporting(true);setExportError('');try{const {downloadFuelEquipmentWorkbook}=await import('../platform/fuelEquipmentExport');await downloadFuelEquipmentWorkbook({rows,scope,from,to});}catch(error){setExportError(error instanceof Error?`No se pudo exportar: ${error.message}`:'No se pudo exportar. Inténtalo nuevamente.');}finally{setExporting(false);}}}>{exporting?'Preparando Excel…':'Exportar Excel · General y 7 equipos'}</button>
+  <small>Exporta la etapa y las fechas elegidas para los siete equipos.</small>
+  {exportError&&<p role="alert">{exportError}</p>}
   {invalid&&<p role="alert">La fecha inicial debe ser anterior o igual a la final.</p>}
   <div className="fuel-equipment-summary"><span><b>{number(totals('ACPM'))} gal</b> ACPM entregado</span><span><b>{number(totals('Gasolina'))} gal</b> Gasolina entregada</span><span><b>{selected.filter(r=>r.warning).length}</b> registros por revisar o completar</span></div>
   <p>Los galones entregados no equivalen necesariamente al combustible consumido. El rendimiento requiere abastecimientos comparables de tanque lleno a tanque lleno.</p>

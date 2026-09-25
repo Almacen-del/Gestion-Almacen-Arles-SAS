@@ -39,8 +39,9 @@ export function meterReading(raw:string|undefined):number|null {
  const value=(raw||'').trim();if(!/^\d+(?:[.,]\d+)?$/.test(value))return null;
  const result=Number(value.replace(',','.'));return Number.isFinite(result)&&result>=0?result:null;
 }
-export type FleetRow={movement:Movement;equipment:FleetIdentity;fuel:'ACPM'|'Gasolina';day:string;instant:number;reading:number|null;delta:number|null;previousDay:string|null;warning:string};
-export function fleetRows(movements:Movement[]):FleetRow[]{
+export const FUEL_CONTROL_START='2026-09-25';
+export type FleetRow={movement:Movement;equipment:FleetIdentity;fuel:'ACPM'|'Gasolina';day:string;instant:number;reading:number|null;delta:number|null;previousDay:string|null;warning:string;historical?:boolean};
+export function fleetRows(movements:Movement[],controlStart=FUEL_CONTROL_START):FleetRow[]{
  const seen=new Set<string>();const rows:FleetRow[]=[];
  for(const m of movements){
   if(seen.has(m.id)||m.hiddenFromOperationalHistory||!/^salida$/i.test(m.tipo.trim()))continue;seen.add(m.id);
@@ -52,6 +53,7 @@ export function fleetRows(movements:Movement[]):FleetRow[]{
  rows.sort((a,b)=>a.instant-b.instant||a.movement.id.localeCompare(b.movement.id));
  const previous=new Map<string,FleetRow>();
  for(const row of rows){
+  if(row.day&&row.day<controlStart){row.historical=true;row.warning='';continue;}
   if(!row.day||!row.equipment.identified||row.reading===null)continue;
   const prior=previous.get(row.equipment.key);
   if(prior){

@@ -14,7 +14,7 @@ it('aggregates actual deliveries by calendar day, Monday week and month without 
  expect(fuelSeries(rows,'week')).toHaveLength(2);
 });
 it('plots original zero and flagged meter values, but never invents missing readings',()=>{
- const rows=fleetRows([m('a','2026-09-01',2,'0'),m('b','2026-09-02',3),m('c','2026-09-03',4,'5000')]);
+ const rows=fleetRows([m('a','2026-10-01',2,'0'),m('b','2026-10-02',3),m('c','2026-10-03',4,'5000'),m('old','2026-09-24',2,'90000')]);
  const {container}=render(<FuelEquipmentCharts rows={rows} equipment="tractor:1"/>);
  expect(screen.getByRole('img',{name:'Tractor 1: 2 lecturas en h'})).toBeTruthy();
  expect(container.querySelectorAll('circle')).toHaveLength(2);

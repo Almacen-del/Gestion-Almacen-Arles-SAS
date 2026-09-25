@@ -19,12 +19,19 @@ describe('equipment identities and meter intervals',()=>{
   for(const value of ['', '-1','1.234,56','NaN','12 h'])expect(meterReading(value)).toBeNull();
  });
  it('compares independent equipment, skips missing readings and flags physically impossible hours without polluting the next baseline',()=>{
-  const rows=fleetRows([movement('a','2026-09-01T12:00:00Z','100'),movement('b','2026-09-02T12:00:00Z',''),movement('c','2026-09-03T12:00:00Z','9000'),movement('d','2026-09-04T12:00:00Z','120'),movement('e','2026-09-05T12:00:00Z','119'),movement('f','2026-09-06T12:00:00Z','125'),movement('g','2026-09-07T12:00:00Z','50',{placaSerial:'#3'})]);
+  const rows=fleetRows([movement('a','2026-10-01T12:00:00Z','100'),movement('b','2026-10-02T12:00:00Z',''),movement('c','2026-10-03T12:00:00Z','9000'),movement('d','2026-10-04T12:00:00Z','120'),movement('e','2026-10-05T12:00:00Z','119'),movement('f','2026-10-06T12:00:00Z','125'),movement('g','2026-10-07T12:00:00Z','50',{placaSerial:'#3'})]);
   expect(rows.map(r=>r.delta)).toEqual([null,null,null,20,null,5,null]);expect(rows[2].warning).toContain('tiempo transcurrido');expect(rows[4].warning).toContain('menor');
  });
  it('ignores entries, annulments, duplicates and urea; does not compare tied timestamps',()=>{
-  const first=movement('a','2026-09-01T12:00:00Z','1');
+  const first=movement('a','2026-10-01T12:00:00Z','1');
   const rows=fleetRows([first,first,movement('b',first.fecha,'2'),movement('c',first.fecha,'3',{tipo:'Entrada'}),movement('d',first.fecha,'3',{descripcion:'Urea'}),movement('e',first.fecha,'3',{hiddenFromOperationalHistory:true})]);
   expect(rows).toHaveLength(2);expect(rows[1].delta).toBeNull();expect(rows[1].warning).toContain('misma fecha');
  });
+});
+
+it('starts a fresh baseline at Bogota midnight and preserves old deliveries without warnings',()=>{
+ const rows=fleetRows([movement('old','2026-09-25T04:59:00Z','90000'),movement('missing','2026-09-24T12:00:00Z',''),movement('start','2026-09-25T05:00:00Z','100'),movement('next','2026-09-26T05:00:00Z','110'),movement('bad','2026-09-27T05:00:00Z','90')]);
+ expect(rows.slice(0,2).every(r=>r.historical&&!r.warning&&r.delta===null)).toBe(true);
+ expect(rows[2].delta).toBeNull();expect(rows[2].previousDay).toBeNull();expect(rows[3].delta).toBe(10);expect(rows[4].warning).toContain('menor');
+ expect(rows.reduce((n,r)=>n+r.movement.cantidad,0)).toBe(25);
 });

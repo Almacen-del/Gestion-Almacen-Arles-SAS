@@ -23,7 +23,7 @@ function DeliveryBars({items,title}:{items:{label:string;acpm:number;gasoline:nu
 }
 function MeterChart({rows,equipment}:{rows:FleetRow[];equipment:string}){
  const group=currentFuelFleet.find(g=>g.key===equipment)!;
- const points=rows.filter(r=>r.day&&r.reading!==null).sort((a,b)=>a.instant-b.instant);
+ const points=rows.filter(r=>!r.historical&&r.day&&r.reading!==null).sort((a,b)=>a.instant-b.instant);
  const values=points.map(r=>r.reading!);const min=Math.min(...values),max=Math.max(...values),padding=Math.max((max-min)*.1,1);
  const low=Math.max(0,min-padding),high=max+padding;
  const start=points[0]?.instant??0,end=points.at(-1)?.instant??start;

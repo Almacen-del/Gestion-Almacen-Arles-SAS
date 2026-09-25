@@ -1,3 +1,4 @@
+import OperationalDirectory from './ui/OperationalDirectory';
 import FuelEquipmentPanel from './ui/FuelEquipmentPanel';
 import AgrochemicalClimateModal from './ui/AgrochemicalClimateModal';
 import {WebOperations} from './backend/supabase/operations';
@@ -2435,6 +2436,7 @@ export function AppShell({ user, supabase }: { user: User; supabase?: {snapshot:
           </button>
         )}
 
+        {supabase && canManageUsers && <OperationalDirectory/>}
         <div className="session-card">
           <UserRound size={18} />
           <div className="session-copy">

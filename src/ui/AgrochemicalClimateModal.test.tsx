@@ -31,8 +31,7 @@ it('shows independent temperature and humidity results without web capture contr
   expect(within(temperature).getAllByText('Dentro de límites de la ficha')).toHaveLength(2);
   expect(within(temperature).queryByText('Humedad superior a 78 %')).toBeNull();
   expect(within(humidity).getByText('Humedad superior a 78 %')).toBeTruthy();
-  expect(screen.getByRole('columnheader', { name: 'Evaluación temperatura' })).toBeTruthy();
-  expect(screen.getByRole('columnheader', { name: 'Evaluación humedad' })).toBeTruthy();
+  expect(within(screen.getByRole('region', {name:'Historial de mediciones'})).getByRole('list')).toBeTruthy();
   expect(rpc.mock.calls.every(c => c[0] === 'climate_dashboard')).toBe(true);
 });
 it('preserves history after transient failure but removes it after permission denial', async () => {
@@ -64,4 +63,28 @@ it('queries one day but exports the entire selected month independently of the p
   fireEvent.click(screen.getByText('Exportar historial mensual'));
   await waitFor(() => expect(downloadClimateMonth).toHaveBeenCalledWith('2024-02', dashboard.readings));
   expect(rpc).toHaveBeenLastCalledWith('climate_dashboard', { p_from: '2024-02-01', p_to: '2024-02-29' });
+});
+
+it('shows reference limits for all products in every period and filters only the history list', async()=>{
+ const ref={t_min:15,t_max:30,h_max:65,note:'Referencia interna',sources:[]};
+ rpc.mockResolvedValue({data:{...dashboard,criteria:[{...criteria,reference:ref}]},error:null});
+ render(<AgrochemicalClimateModal onClose={vi.fn()}/>);
+ await screen.findByText('Operador de prueba');
+ for(const mode of ['day','week','month']) {
+   fireEvent.change(screen.getByLabelText('Periodo'),{target:{value:mode}});
+   await waitFor(()=>expect(screen.getByText('Mín. 15 ref.')).toBeTruthy());
+   expect(screen.getByText('Máx. 30 ref.')).toBeTruthy();
+   expect(screen.getByText('< 65 % ref.')).toBeTruthy();
+ }
+ const history=screen.getByRole('region',{name:'Historial de mediciones'});
+ fireEvent.input(screen.getByLabelText('Historial desde'),{target:{value:'2099-01-01'}});
+ expect(within(history).queryByText('Operador de prueba')).toBeNull();
+ expect(screen.getByRole('img',{name:'Temperatura (°C): 1 mediciones. Valores exactos en el historial.'})).toBeTruthy();
+ fireEvent.input(screen.getByLabelText('Historial hasta'),{target:{value:'2000-01-01'}});
+ expect(screen.getByRole('alert').textContent).toContain('fecha inicial');
+ fireEvent.click(screen.getByText('Limpiar fechas'));
+ expect(within(history).getByText('Operador de prueba')).toBeTruthy();
+ fireEvent.change(screen.getByLabelText('Producto'),{target:{value:'BIO006'}});
+ expect(screen.getByText('Máx. 32')).toBeTruthy();
+ expect(screen.queryByText('Máx. 30 ref.')).toBeNull();
 });

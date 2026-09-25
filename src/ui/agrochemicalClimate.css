@@ -60,3 +60,10 @@
 @media (max-width: 750px) { .climate-fields, .climate-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } .climate-charts { grid-template-columns: 1fr; } .climate-product summary { align-items: start; flex-direction: column; } }
 
 .climate-export { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:12px 0; }
+
+.climate-history-list { list-style:none; padding:0; margin:12px 0; display:grid; gap:10px; max-height:540px; overflow-y:auto; }
+.climate-history-list li { border:1px solid #dce7de; border-radius:10px; padding:14px; background:#f8fbf8; overflow-wrap:anywhere; }
+.climate-history-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.climate-history-measures { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:10px 0; }
+.climate-history-list small { display:block; margin-top:4px; color:#496555; }
+@media (max-width:560px) { .climate-history-heading { align-items:flex-start; flex-direction:column; } .climate-history-measures { grid-template-columns:1fr; } }

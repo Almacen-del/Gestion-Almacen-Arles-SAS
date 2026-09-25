@@ -25,16 +25,16 @@ function ClimateChart({ readings, metric, rule, criteria, from, to }: { readings
   const temperature = metric === 'temperature_c';
   const title = temperature ? 'Temperatura (°C)' : 'Humedad relativa (%)';
   const limits: { value: number; label: string }[] = [];
-  if (rule && criteria) {
+  if (criteria) {
     if (temperature) {
-      const has = rule.t_min !== null || rule.t_max !== null;
-      const low = has ? rule.t_min : criteria.reference?.t_min;
-      const high = has ? rule.t_max : criteria.reference?.t_max;
+      const has = !!rule && (rule.t_min !== null || rule.t_max !== null);
+      const low = has ? rule!.t_min : criteria.reference?.t_min;
+      const high = has ? rule!.t_max : criteria.reference?.t_max;
       if (low != null) limits.push({ value: low, label: `Mín. ${low}${has ? '' : ' ref.'}` });
       if (high != null) limits.push({ value: high, label: `Máx. ${high}${has ? '' : ' ref.'}` });
     } else {
-      const high = rule.h_max ?? criteria.reference?.h_max;
-      if (high != null) limits.push({ value: high, label: `${rule.h_max === null ? '<' : '≤'} ${high} %${rule.h_max === null ? ' ref.' : ''}` });
+      const high = rule?.h_max ?? criteria.reference?.h_max;
+      if (high != null) limits.push({ value: high, label: `${rule?.h_max == null ? '<' : '≤'} ${high} %${rule?.h_max == null ? ' ref.' : ''}` });
     }
   }
   const values = readings.map(r => Number(r[metric]));
@@ -76,6 +76,8 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
   const [dashboard, setDashboard] = useState<ClimateDashboard | null>(null);
   const [mode, setMode] = useState<'day' | 'week' | 'month'>('week');
   const [anchor, setAnchor] = useState(colombiaDateTime().slice(0, 10));
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
   const [exporting, setExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
   const [code, setCode] = useState('');
@@ -112,6 +114,9 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
   }
   const criteria = dashboard?.criteria.find(c => c.version === dashboard.current_version);
   const readings = (dashboard?.readings ?? []).filter(r => r.reading_date >= range.from && r.reading_date <= range.to);
+  const invalidHistoryRange = !!historyFrom && !!historyTo && historyFrom > historyTo;
+  const historyReadings = invalidHistoryRange ? [] : readings.filter(r => (!historyFrom || r.reading_date >= historyFrom) && (!historyTo || r.reading_date <= historyTo));
+  useEffect(() => { setHistoryFrom(''); setHistoryTo(''); }, [range.from, range.to]);
   const rule = criteria?.rules.find(r => r.code === code);
   const shown = selected ?? readings.at(-1);
   const shownCriteria = shown && dashboard ? criteriaForReading(shown, dashboard) : undefined;
@@ -130,19 +135,38 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
         <label>Fecha del periodo<input type="date" value={anchor} onChange={e => { if (e.target.value) setAnchor(e.target.value); }} /></label>
         <label>Producto<select value={code} onChange={e => setCode(e.target.value)}><option value="">Todos los productos</option>{criteria?.rules.map(r => <option key={r.code} value={r.code}>{r.code} · {r.name}</option>)}</select></label>
         <button type="button" disabled={loading} onClick={() => setRefreshKey(v => v + 1)}>Actualizar registros</button>
-      </div><p>{range.from} a {range.to} · {readings.length} mediciones. {code ? 'Límites actuales del producto seleccionado.' : 'La temperatura y humedad de la bodega son comunes a todos los productos.'}</p>
+      </div><p>{range.from} a {range.to} · {readings.length} mediciones. {code ? 'Límites actuales del producto seleccionado.' : 'La temperatura y humedad de la bodega son comunes a todos los productos. Las líneas discontinuas muestran la referencia preventiva interna; cada producto se evalúa con su ficha cuando tiene límites definidos.'}</p>
       <div className="climate-export"><button type="button" disabled={exporting || loading || !dashboard} onClick={() => void exportMonth()}>{exporting ? 'Exportando…' : 'Exportar historial mensual'}</button><small>Excel MP-F-010 · Mes completo: {anchor.slice(0, 7)} · Todas las lecturas de Bodega Azul</small></div>
       {exportMessage && <p role="status">{exportMessage}</p>}
       {loading && <p role="status">Consultando mediciones…</p>}
       <div className="climate-charts"><ClimateChart readings={readings} metric="temperature_c" rule={rule} criteria={criteria} {...range} /><ClimateChart readings={readings} metric="humidity_percent" rule={rule} criteria={criteria} {...range} /></div>
       {dashboard && <div className="climate-separated"><ProductHistoryChart readings={readings} dashboard={dashboard} code={code} metric="temperature" /><ProductHistoryChart readings={readings} dashboard={dashboard} code={code} metric="humidity" /></div>}
       {!loading && !readings.length && <p>No hay mediciones registradas en este periodo.</p>}
-      {readings.length > 0 && <div className="climate-table"><table><caption>Historial de mediciones · Selecciona un registro para ver los productos</caption><thead><tr><th>Fecha / turno</th><th>Temperatura</th><th>Humedad</th><th>Evaluación temperatura</th><th>Evaluación humedad</th><th>Responsable / observaciones</th><th>Detalle</th></tr></thead><tbody>{[...readings].reverse().map(r => {
-        const c = dashboard ? criteriaForReading(r, dashboard) : undefined;
-        const results = (metric: ClimateMetric) => c?.rules.filter(item => !code || item.code === code).map(item => evaluateClimateParameter(item, Number(metric === 'temperature' ? r.temperature_c : r.humidity_percent), c.reference, metric)) ?? [];
-        const statusCell = (metric: ClimateMetric) => { const values = results(metric); return code ? values[0] ? climateLabels[values[0].status] : 'Sin criterio histórico' : `${values.filter(a => a.status === 'outside').length} / ${values.length} fuera de criterio`; };
-        return <tr key={r.id}><td>{time(r.measured_at)} · {r.period}</td><td>{number(r.temperature_c)} °C</td><td>{number(r.humidity_percent)} %</td><td>{statusCell('temperature')}{!r.criteria_version && <small>Evaluación retrospectiva</small>}</td><td>{statusCell('humidity')}{!r.criteria_version && <small>Evaluación retrospectiva</small>}</td><td>{r.responsible_name}<small>{r.notes}</small></td><td><button type="button" onClick={() => setSelected(r)}>Ver productos</button></td></tr>;
-      })}</tbody></table></div>}
+      <section className="climate-history" aria-label="Historial de mediciones">
+        <h3>Historial de mediciones</h3>
+        <p>Filtra las fechas dentro del periodo seleccionado: {range.from} a {range.to}.</p>
+        <div className="climate-fields">
+          <label>Desde<input type="date" aria-label="Historial desde" min={range.from} max={range.to} value={historyFrom} onInput={e => {setHistoryFrom(e.currentTarget.value);setSelected(null);}} /></label>
+          <label>Hasta<input type="date" aria-label="Historial hasta" min={range.from} max={range.to} value={historyTo} onInput={e => {setHistoryTo(e.currentTarget.value);setSelected(null);}} /></label>
+          <button type="button" onClick={() => {setHistoryFrom('');setHistoryTo('');setSelected(null);}}>Limpiar fechas</button>
+        </div>
+        {invalidHistoryRange ? <p role="alert">La fecha inicial debe ser anterior o igual a la final.</p> : <p>{historyReadings.length} mediciones en la lista. Las gráficas conservan el periodo completo.</p>}
+        {!invalidHistoryRange && !historyReadings.length && <p>No hay mediciones para estas fechas.</p>}
+        <ul className="climate-history-list">
+          {[...historyReadings].reverse().map(r => {
+            const c = dashboard ? criteriaForReading(r, dashboard) : undefined;
+            const statusText = (metric: ClimateMetric) => {
+              const values = c?.rules.filter(item => !code || item.code === code).map(item => evaluateClimateParameter(item, Number(metric === 'temperature' ? r.temperature_c : r.humidity_percent), c.reference, metric)) ?? [];
+              return code ? values[0] ? climateLabels[values[0].status] : 'Sin criterio histórico' : `${values.filter(a => a.status === 'outside').length} / ${values.length} fuera de criterio`;
+            };
+            return <li key={r.id}>
+              <div className="climate-history-heading"><strong>{time(r.measured_at)} · {r.period}</strong><button type="button" onClick={() => setSelected(r)}>Ver productos</button></div>
+              <div className="climate-history-measures"><div><b>Temperatura: {number(r.temperature_c)} °C</b><small>{statusText('temperature')}</small></div><div><b>Humedad: {number(r.humidity_percent)} %</b><small>{statusText('humidity')}</small></div></div>
+              <span>{r.responsible_name}</span>{r.notes && <small>{r.notes}</small>}{!r.criteria_version && <small>Evaluación retrospectiva</small>}
+            </li>;
+          })}
+        </ul>
+      </section>
       {shown && shownCriteria && <section><h3>{selected ? 'Medición seleccionada' : 'Última medición del periodo'} · {time(shown.measured_at)}</h3><p>{number(shown.temperature_c)} °C · {number(shown.humidity_percent)} % · {shown.criteria_version ? 'Evaluación con los criterios conservados al registrar.' : 'Evaluación retrospectiva con los criterios actuales.'}</p><ProductConditions criteria={shownCriteria} t={Number(shown.temperature_c)} h={Number(shown.humidity_percent)} code={code} /></section>}
       </section>
     </div>

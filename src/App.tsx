@@ -1067,15 +1067,18 @@ export function PendingUsersPanel({
   users,
   onClose,
   onSave,
+  mobileAccess = false,
 }: {
+  mobileAccess?: boolean;
   users: UserProfile[];
   onClose: () => void;
-  onSave: (profile: UserProfile, role: string, name: string, jobTitle: string, state: string) => Promise<void>;
+  onSave: (profile: UserProfile, role: string, name: string, jobTitle: string, state: string, mobile?: boolean) => Promise<void>;
 }) {
   const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
   const [jobTitles, setJobTitles] = useState<Record<string, string>>({});
   const [selectedStates, setSelectedStates] = useState<Record<string, string>>({});
+  const [mobileStates, setMobileStates] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState('');
   const [error, setError] = useState('');
 
@@ -1087,7 +1090,8 @@ export function PendingUsersPanel({
     setSavingId(profile.id);
     setError('');
     try {
-      await onSave(profile, role, name, jobTitle, state);
+      if (mobileAccess) await onSave(profile, role, name, jobTitle, state, mobileStates[profile.id] ?? profile.mobileActive ?? false);
+      else await onSave(profile, role, name, jobTitle, state);
     } catch (error) {
       setError(error instanceof Error ? error.message : `No se pudo guardar ${profile.email || profile.id}. Verifica los permisos y la conexión.`);
     } finally {
@@ -1128,6 +1132,7 @@ export function PendingUsersPanel({
               <article className="pending-user-row" key={profile.id}>
                 <div className="pending-user-identity">
                   <strong>{profile.email || profile.id}</strong>
+                  {mobileAccess && <small>{profile.emailConfirmed ? 'Correo confirmado' : 'Correo pendiente de confirmar'}</small>}
                   <span><Clock3 size={13} /> {profile.estado === 'pendiente' ? 'Esperando autorización' : 'Cuenta establecida'}</span>
                 </div>
                 <label>
@@ -1156,7 +1161,7 @@ export function PendingUsersPanel({
                   </select>
                 </label>
                 <label>
-                  Estado
+                  {mobileAccess ? 'Estado web' : 'Estado'}
                   <select
                     value={selectedStates[profile.id] ?? (profile.estado === 'pendiente' ? 'activo' : profile.activo === false ? 'inactivo' : 'activo')}
                     onChange={(event) => setSelectedStates((current) => ({ ...current, [profile.id]: event.target.value }))}
@@ -1164,6 +1169,14 @@ export function PendingUsersPanel({
                     {EDITABLE_USER_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
                   </select>
                 </label>
+                {mobileAccess && <label>
+                  Acceso móvil
+                  <select aria-label={`Acceso móvil de ${profile.email}`} value={(mobileStates[profile.id] ?? profile.mobileActive ?? false) ? 'activo' : 'inactivo'}
+                    onChange={event => setMobileStates(current => ({...current, [profile.id]: event.target.value === 'activo'}))}>
+                    <option value="inactivo">Deshabilitado</option><option value="activo">Habilitado</option>
+                  </select>
+                  <small>Almacén y Taller · {profile.mobileRole === 'ADMIN' ? 'Administrador existente' : 'Operador'}</small>
+                </label>}
                 <button type="button" onClick={() => { void save(profile); }} disabled={savingId === profile.id}>
                   <UserCheck size={16} />
                   {savingId === profile.id ? 'Guardando...' : profile.estado === 'pendiente' ? 'Activar' : 'Guardar'}
@@ -1593,11 +1606,11 @@ export function AppShell({ user, supabase }: { user: User; supabase?: {snapshot:
     return Array.from(uniqueProfiles.values()).sort((left, right) => left.email.localeCompare(right.email));
   }, [users]);
 
-  async function saveUserProfile(profile: UserProfile, role: string, name: string, jobTitle: string, state: string) {
+  async function saveUserProfile(profile: UserProfile, role: string, name: string, jobTitle: string, state: string, mobile?: boolean) {
     if(supabase&&webOperations){
       const roles:Record<string,string>={admin:'ADMIN',administrador:'ADMIN',owner:'ADMIN',almacenista:'MANAGER',lector:'READER',usuario:'READER',operador:'READER'};
       if(!roles[role.toLowerCase()])throw Error('Selecciona un perfil válido.');
-      await webOperations.save('web_update_profile',profile.id,{p_user_id:profile.id,p_role:roles[role.toLowerCase()],p_name:name,p_job:jobTitle,p_active:state==='activo'});
+      await webOperations.save('web_update_profile_access',profile.id,{p_user_id:profile.id,p_role:roles[role.toLowerCase()],p_name:name,p_job:jobTitle,p_active:state==='activo',p_mobile_active:mobile ?? profile.mobileActive ?? false});
       await supabase.refresh();return;
     }
     const isActive = state === 'activo';
@@ -3051,6 +3064,7 @@ export function AppShell({ user, supabase }: { user: User; supabase?: {snapshot:
             return leftPending - rightPending || left.email.localeCompare(right.email);
           })}
           onClose={() => setShowPendingUsers(false)}
+          mobileAccess={!!supabase}
           onSave={saveUserProfile}
         />
       )}

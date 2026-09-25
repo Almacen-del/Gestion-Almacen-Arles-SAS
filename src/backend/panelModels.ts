@@ -82,6 +82,9 @@ export type Movement = {
 
 export type UserProfile = {
   manageable?:boolean;
+  mobileActive?:boolean;
+  mobileRole?:string;
+  emailConfirmed?:boolean;
   id: string;
   nombre: string;
   cargo: string;

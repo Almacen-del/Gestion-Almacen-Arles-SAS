@@ -136,7 +136,7 @@ export function parsePanelSnapshot(value:unknown):PanelSnapshot {
   const users:Record<string,UserProfile>={};
   for(const h of rows(root.historical_profiles??[],'id')){const original=fields(Object.fromEntries(Object.entries(object(h.fields)).filter(([,v])=>v!==null)));const id=required(h,'id');users[id]={id,nombre:firstText(original,'nombre','nombres'),cargo:text(original,'cargo'),email:text(original,'email'),rol:'lector',estado:'histórico',activo:false};}
   for(const u of rows(root.profiles,'user_id')){
-    const id=required(u,'user_id'),profile:UserProfile={id,nombre:required(u,'display_name'),cargo:text(u,'job_title'),email:text(u,'email'),manageable:true,
+    const id=required(u,'user_id'),profile:UserProfile={id,nombre:required(u,'display_name'),cargo:text(u,'job_title'),email:text(u,'email'),manageable:true,mobileActive:u.mobile_active===true,mobileRole:text(u,'mobile_role'),emailConfirmed:u.email_confirmed===true,
       rol:u.role==='ADMIN'?'admin':u.role==='MANAGER'?'almacenista':'lector',estado:u.approved===false?'pendiente':u.active?'activo':'inactivo',activo:u.active===true};
     users[id]=profile;if(u.legacy_uid)users[required(u,'legacy_uid')]=profile;
   }

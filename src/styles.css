@@ -494,7 +494,7 @@ h2 {
 
 .pending-panel {
   box-sizing: border-box;
-  width: min(680px, calc(100vw - 276px));
+  width: min(1100px, calc(100vw - 276px));
   max-height: calc(100vh - 100px);
   overflow: auto;
   padding: 16px;
@@ -537,7 +537,7 @@ h2 {
 
 .pending-user-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1.2fr) minmax(100px, 0.9fr) minmax(100px, 0.9fr) 100px 92px auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: end;
   gap: 8px;
   padding: 10px;

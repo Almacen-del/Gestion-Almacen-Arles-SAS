@@ -26,3 +26,16 @@ it('preserves the displayed role and name when saving an existing profile',async
  fireEvent.click(screen.getByRole('button',{name:/^Guardar$/}));
  expect(save).toHaveBeenCalledWith(profile,'admin','Almacén','Almacén','activo');
 });
+
+it('keeps mobile access explicit and shows email confirmation independently', async()=>{
+ const profile={id:'new',nombre:'Persona',email:'persona@arlessas.com',rol:'lector',cargo:'Taller',estado:'activo',activo:true,mobileActive:false,emailConfirmed:false};
+ const save=vi.fn(async()=>{});
+ render(<PendingUsersPanel users={[profile]} mobileAccess onClose={vi.fn()} onSave={save}/>);
+ expect(screen.getByText('Correo pendiente de confirmar')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Guardar'}));
+ expect(save).toHaveBeenLastCalledWith(profile,'lector','Persona','Taller','activo',false);
+ await screen.findByRole('button',{name:'Guardar'});
+ fireEvent.change(screen.getByRole('combobox',{name:'Acceso móvil de persona@arlessas.com'}),{target:{value:'activo'}});
+ fireEvent.click(screen.getByRole('button',{name:'Guardar'}));
+ expect(save).toHaveBeenLastCalledWith(profile,'lector','Persona','Taller','activo',true);
+});

@@ -47,7 +47,7 @@ async function exportar(
 }
 
 describe('Excel uniforme de los módulos', () => {
-  it('usa el Kardex EPP existente y no las hojas genéricas', async () => {
+  it('exporta EPP sin fórmulas, con saldo actual independiente del histórico y fechas reales', async () => {
     const template = await readFile('public/templates/KARDEX-EPP.xlsx');
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => template });
     vi.stubGlobal('fetch', fetchMock);
@@ -56,10 +56,21 @@ describe('Excel uniforme de los módulos', () => {
       const salida = movimiento({ ...entrada, id: 'salida-epp', tipo: 'Salida', fecha: '2026-08-03', codigo: 'PC01', descripcion: 'CANILLERA CORTA', cantidad: 2, unidad: 'Par' });
       const payload = crearReporteMovimientos({
         moduleName: 'EPP', movimientos: [entrada, salida], historialCompleto: [entrada, salida],
-        inventarioActual: [], lotesAgroquimicos: [], usuarios: {}, periodLabel: '', exportDate: '', generatedBy: '', coverageLabel: '',
+        inventarioActual: [{id:'producto',modulo:'EPP',codigo:'PC04',descripcion:'DELANTAL DE CARNAZA T UNICA',referencia:'',unidad:'Unidad',saldo_actual:1}], lotesAgroquimicos: [], usuarios: {}, periodLabel: '', exportDate: '', generatedBy: '', coverageLabel: '',
       });
       const bytes = await generarReporteMovimientosExcelWeb(payload);
-      expect(fetchMock).toHaveBeenCalledWith('/templates/KARDEX-EPP.xlsx');
+      expect(fetchMock).not.toHaveBeenCalled();
+      const wb=new ExcelJS.Workbook();
+      await wb.xlsx.load(Buffer.from(bytes) as unknown as ExcelJS.Buffer);
+      expect(wb.getWorksheet('EPP')!.getCell('E5').value).toBe(1);
+      expect(wb.getWorksheet('EPP')!.getCell('B5').value).toBe('DELANTAL DE CARNAZA T UNICA');
+      for(const [sheet,date] of [['R.E','2026-08-01'],['R.S','2026-08-03']]){
+        const cell=wb.getWorksheet(sheet)!.getCell('A5');
+        expect(cell.value).toBeInstanceOf(Date);
+        expect((cell.value as Date).toISOString().slice(0,10)).toBe(date);
+        expect(cell.numFmt).toBe('dd/mm/yyyy');
+      }
+      wb.eachSheet(s=>s.eachRow(r=>r.eachCell(c=>expect(c.formula).toBeUndefined())));
       const zip = await (await import('jszip')).default.loadAsync(bytes);
       expect(await zip.file('xl/workbook.xml')!.async('string')).toContain('name="R.E"');
       expect(await zip.file('xl/workbook.xml')!.async('string')).not.toContain('Movimientos generales');

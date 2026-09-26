@@ -238,8 +238,8 @@ export async function generarReporteMovimientosExcelWeb(payload: ReporteMovimien
     return exportFuelTemplate(payload.fuelDeliveryRows);
   }
   if (payload.moduleName.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s/g, '') === 'epp') {
-    const { exportEppKardexTemplate } = await import('./eppKardexExport');
-    return exportEppKardexTemplate(payload.entradasGenerales, payload.salidasGenerales);
+    const { exportEppStatic } = await import('./eppStaticExport');
+    return exportEppStatic(payload);
   }
   const workbook = new ExcelJS.Workbook();
   workbook.creator = payload.generatedBy;

@@ -3144,6 +3144,7 @@ function MovementList({
               <small><strong>Labor/Frente:</strong> {[movement.labor, movement.frente].filter(Boolean).join(' / ')}</small>
             )}
             {movement.maquinaria && <small><strong>Maquinaria/Equipo:</strong> {movement.maquinaria}</small>}
+            {movement.destinationLot && <small><strong>Lote de destino:</strong> {movement.destinationLot}</small>}
             {movement.zona && !movement.frente && <small><strong>Zona:</strong> {movement.zona}</small>}
             {movementDetailText(movement) && !movement.labor && !movement.frente && (
               <small>Detalle: {movementDetailText(movement)}</small>

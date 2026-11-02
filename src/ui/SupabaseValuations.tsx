@@ -166,15 +166,15 @@ export default function SupabaseValuations({client:providedClient,snapshot}:{cli
     </form>
   </section>;
   return <section className="valuation-dashboard" aria-label="Valoraciones conectadas a Supabase">
-    <div className="valuation-current-toolbar"><strong>Valoraciones · Supabase</strong>
+    <div className="valuation-current-toolbar valuation-connection-toolbar"><span className="connection-label">Valoración del inventario</span>
       <button className="tool-button" disabled={loading||!online||saveState==='saving'} onClick={()=>void refresh()}>Actualizar</button>
-      <button className="tool-button" disabled={saveState==='saving'} onClick={()=>void logout()}>Cerrar sesión de Supabase</button>
+      <button className="tool-button" disabled={saveState==='saving'} onClick={()=>void logout()}>Cerrar sesión</button>
     </div>
     {!access?.operational&&<p role="status">Modo revisión: puedes consultar y revisar los precios. El guardado se habilitará al activar la web.</p>}
     {!online&&<p role="status">Sin conexión. No se pueden guardar cambios.</p>}
     {error&&<p role="alert" className="form-error">{error}</p>}
     {saveState==='saved'&&<p role="status">Valor unitario guardado.</p>}
-    {access&&<div className="valuation-tabs"><button onClick={()=>setTab('current')}>Valor actual</button><button onClick={()=>setTab('entries')}>Entradas por valorar</button><button onClick={()=>setTab('history')}>Histórico mensual</button></div>}
+    {access&&<div className="valuation-tabs" role="group" aria-label="Vistas de valoración"><button className={tab==='current'?'active':''} aria-pressed={tab==='current'} onClick={()=>setTab('current')}>Valor actual</button><button className={tab==='entries'?'active':''} aria-pressed={tab==='entries'} onClick={()=>setTab('entries')}>Entradas por valorar</button><button className={tab==='history'?'active':''} aria-pressed={tab==='history'} onClick={()=>setTab('history')}>Histórico mensual</button></div>}
     {access&&tab==='history'&&<HistoricalValuationView repository={monthlyApi} canManage={!!snapshot&&access.operational&&access.role!=='READER'} sources={monthlySources} historyReady={!!snapshot&&!loading} currentRows={rows} moduleOptions={modules} online={online} user={{uid:session.user.id,email:session.user.email??null} as User}/>}
     {access&&tab==='entries'&&<PendingEntryValuations canManage={access.operational&&access.role!=='READER'} online={online} user={{uid:session.user.id,email:session.user.email??null} as User}
       currentAverages={Object.fromEntries(catalog.filter(r=>r.unit_value!==null).map(r=>[r.valuation_id,r.unit_value!]))}

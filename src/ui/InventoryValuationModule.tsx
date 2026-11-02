@@ -412,7 +412,7 @@ export function CurrentValuationView({
   const progressPercent = Math.round((saveProgress.completed / Math.max(saveProgress.total, 1)) * 100);
 
   return (
-    <section className="valuation-current-view" aria-label="Valor actual del inventario">
+    <section className="valuation-current-view valuation-ledger" aria-label="Valor actual del inventario">
       <div className="valuation-current-toolbar">
         <label className="search-box">
           <Search size={18} />
@@ -498,7 +498,7 @@ export function CurrentValuationView({
         <article className="valuation-summary-card total">
           <CircleDollarSign size={24} />
           <div>
-            <span>Valor total de todo el inventario</span>
+            <span>Capital en inventario</span>
             <strong>{formatCurrency(summary.inventoryGrandTotal)}</strong>
             <small>{formatNumber(summary.productCount)} productos registrados</small>
           </div>
@@ -524,8 +524,8 @@ export function CurrentValuationView({
       <section className="valuation-module-section" aria-labelledby="valuation-module-totals-title">
         <div className="valuation-section-heading">
           <div>
-            <p className="eyebrow">Totales separados por módulo</p>
-            <h2 id="valuation-module-totals-title">Distribución del valor actual</h2>
+            <p className="eyebrow">Composición del inventario</p>
+            <h2 id="valuation-module-totals-title">Dónde está el valor</h2>
           </div>
           {moduleFilter !== 'all' && (
             <button type="button" onClick={() => setModuleFilter('all')}><X size={14} /> Ver todos</button>
@@ -534,6 +534,7 @@ export function CurrentValuationView({
         <div className="valuation-module-grid">
           {summary.moduleTotals
             .filter((entry) => shouldShowCurrentValueModuleCard(entry.moduleName))
+            .sort((a, b) => b.total - a.total)
             .map((entry) => (
               <button
                 type="button"
@@ -545,6 +546,7 @@ export function CurrentValuationView({
                 <span>{entry.moduleName}</span>
                 <strong>{formatCurrency(entry.total)}</strong>
                 <small>{entry.valuedCount} con valor de {entry.productCount}</small>
+                <div className="valuation-share-track" aria-hidden="true"><i style={{width: `${summary.inventoryGrandTotal > 0 ? Math.min(100, Math.max(0, entry.total / summary.inventoryGrandTotal * 100)) : 0}%`}} /></div>
               </button>
             ))}
           {monthlyEnabled && <article className="valuation-exit-expense-card" title="Estimación calculada con el valor unitario promedio actual de cada producto; no reemplaza un costo histórico por salida.">
@@ -567,7 +569,7 @@ export function CurrentValuationView({
         <div className="panel-header">
           <div>
             <p className="eyebrow">Inventario consolidado</p>
-            <h2>Tabla general</h2>
+            <h2>Detalle de productos</h2>
             <small>{formatNumber(filteredRows.length)} productos visibles</small>
           </div>
           <CircleDollarSign size={20} />

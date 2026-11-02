@@ -7,6 +7,7 @@ import { initializeMonitoring, Logger, setupGlobalErrorHandler } from './utils/l
 import { retireLegacyPwa } from './retireLegacyPwa';
 import { APP_RELEASE } from './release';
 import './styles.css';
+import './compact.css';
 
 // Inicializar manejador global de errores
 setupGlobalErrorHandler();

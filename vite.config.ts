@@ -8,11 +8,11 @@ const headers = Object.fromEntries(deployment.headers[0].headers.map(({ key, val
 const csp = headers['Content-Security-Policy'];
 let revision = 'local';
 try { revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* source archive */ }
-const vercelRevision = process.env.VERCEL_GIT_COMMIT_SHA;
-const isVercelBuild = process.env.VERCEL === '1';
-if (isVercelBuild && !/^[a-f0-9]{40}$/.test(vercelRevision ?? '')) throw new Error('Vercel debe proporcionar el commit de esta publicación.');
-if (isVercelBuild) revision = vercelRevision!;
-const release = { id: `${revision.slice(0, 12)}${isVercelBuild ? '' : '-local'}`, revision, builtAt: new Date().toISOString() };
+const hostedRevision = process.env.NETLIFY === 'true' ? process.env.COMMIT_REF : process.env.VERCEL_GIT_COMMIT_SHA;
+const isHostedBuild = process.env.VERCEL === '1' || process.env.NETLIFY === 'true';
+if (isHostedBuild && !/^[a-f0-9]{40}$/.test(hostedRevision ?? '')) throw new Error('El alojamiento debe proporcionar el commit de esta publicación.');
+if (isHostedBuild) revision = hostedRevision!;
+const release = { id: `${revision.slice(0, 12)}${isHostedBuild ? '' : '-local'}`, revision, builtAt: new Date().toISOString() };
 
 export default defineConfig({
   base: '/',

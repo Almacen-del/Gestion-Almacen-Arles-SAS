@@ -76,6 +76,7 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
   const [dashboard, setDashboard] = useState<ClimateDashboard | null>(null);
   const [mode, setMode] = useState<'day' | 'week' | 'month'>('week');
   const [anchor, setAnchor] = useState(colombiaDateTime().slice(0, 10));
+  const [showHistory, setShowHistory] = useState(false);
   const [historyFrom, setHistoryFrom] = useState('');
   const [historyTo, setHistoryTo] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -142,6 +143,8 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
       <div className="climate-charts"><ClimateChart readings={readings} metric="temperature_c" rule={rule} criteria={criteria} {...range} /><ClimateChart readings={readings} metric="humidity_percent" rule={rule} criteria={criteria} {...range} /></div>
       {dashboard && <div className="climate-separated"><ProductHistoryChart readings={readings} dashboard={dashboard} code={code} metric="temperature" /><ProductHistoryChart readings={readings} dashboard={dashboard} code={code} metric="humidity" /></div>}
       {!loading && !readings.length && <p>No hay mediciones registradas en este periodo.</p>}
+      <button type="button" aria-expanded={showHistory} aria-controls="climate-measurement-history" onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Ocultar historial' : 'Ver historial'}</button>
+      <div id="climate-measurement-history" hidden={!showHistory}>
       <section className="climate-history" aria-label="Historial de mediciones">
         <h3>Historial de mediciones</h3>
         <p>Filtra las fechas dentro del periodo seleccionado: {range.from} a {range.to}.</p>
@@ -167,6 +170,7 @@ export default function AgrochemicalClimateModal({ onClose }: { onClose: () => v
           })}
         </ul>
       </section>
+      </div>
       {shown && shownCriteria && <section><h3>{selected ? 'Medición seleccionada' : 'Última medición del periodo'} · {time(shown.measured_at)}</h3><p>{number(shown.temperature_c)} °C · {number(shown.humidity_percent)} % · {shown.criteria_version ? 'Evaluación con los criterios conservados al registrar.' : 'Evaluación retrospectiva con los criterios actuales.'}</p><ProductConditions criteria={shownCriteria} t={Number(shown.temperature_c)} h={Number(shown.humidity_percent)} code={code} /></section>}
       </section>
     </div>

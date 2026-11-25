@@ -13,6 +13,7 @@ beforeEach(() => { rpc.mockReset(); rpc.mockResolvedValue({ data: dashboard, err
 afterEach(cleanup);
 it('loads date ranges and shows real history without legacy location arguments', async () => {
   render(<AgrochemicalClimateModal onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Ver historial' }));
   await screen.findByText('Operador de prueba');
   expect(rpc.mock.calls[0][0]).toBe('climate_dashboard');
   fireEvent.change(screen.getByLabelText('Periodo'), { target: { value: 'month' } });
@@ -23,6 +24,7 @@ it('loads date ranges and shows real history without legacy location arguments',
 it('shows independent temperature and humidity results without web capture controls', async () => {
   rpc.mockResolvedValue({ data: { ...dashboard, readings: [{ ...reading, temperature_c: 26, humidity_percent: 95 }] }, error: null });
   render(<AgrochemicalClimateModal onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Ver historial' }));
   await screen.findByText('Operador de prueba');
   expect(screen.queryByText('Nueva medición')).toBeNull();
   expect(screen.queryByText('Guardar medición')).toBeNull();
@@ -35,7 +37,8 @@ it('shows independent temperature and humidity results without web capture contr
   expect(rpc.mock.calls.every(c => c[0] === 'climate_dashboard')).toBe(true);
 });
 it('preserves history after transient failure but removes it after permission denial', async () => {
-  render(<AgrochemicalClimateModal onClose={vi.fn()} />); await screen.findByText('Operador de prueba');
+  render(<AgrochemicalClimateModal onClose={vi.fn()} />); fireEvent.click(screen.getByRole('button', { name: 'Ver historial' }));
+  await screen.findByText('Operador de prueba');
   rpc.mockResolvedValue({ data: null, error: { code: 'NETWORK' } });
   fireEvent.click(screen.getByText('Actualizar registros')); await screen.findByRole('alert');
   expect(screen.getByText('Operador de prueba')).toBeTruthy();
@@ -54,6 +57,7 @@ it('readers cannot submit and missing readings are not plotted as zero', async (
 
 it('queries one day but exports the entire selected month independently of the product filter', async () => {
   render(<AgrochemicalClimateModal onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Ver historial' }));
   await screen.findByText('Operador de prueba');
   fireEvent.change(screen.getByLabelText('Periodo'), { target: { value: 'day' } });
   fireEvent.change(screen.getByLabelText('Fecha del periodo'), { target: { value: '2024-02-15' } });
@@ -69,7 +73,8 @@ it('shows reference limits for all products in every period and filters only the
  const ref={t_min:15,t_max:30,h_max:65,note:'Referencia interna',sources:[]};
  rpc.mockResolvedValue({data:{...dashboard,criteria:[{...criteria,reference:ref}]},error:null});
  render(<AgrochemicalClimateModal onClose={vi.fn()}/>);
- await screen.findByText('Operador de prueba');
+ fireEvent.click(screen.getByRole('button', { name: 'Ver historial' }));
+  await screen.findByText('Operador de prueba');
  for(const mode of ['day','week','month']) {
    fireEvent.change(screen.getByLabelText('Periodo'),{target:{value:mode}});
    await waitFor(()=>expect(screen.getByText('Mín. 15 ref.')).toBeTruthy());
@@ -87,4 +92,22 @@ it('shows reference limits for all products in every period and filters only the
  fireEvent.change(screen.getByLabelText('Producto'),{target:{value:'BIO006'}});
  expect(screen.getByText('Máx. 32')).toBeTruthy();
  expect(screen.queryByText('Máx. 30 ref.')).toBeNull();
+});
+
+it('keeps history collapsed until requested and preserves filters when reopened', async () => {
+  render(<AgrochemicalClimateModal onClose={vi.fn()} />);
+  await screen.findByRole('img', { name: 'Temperatura (°C): 1 mediciones. Valores exactos en el historial.' });
+  expect(screen.queryByRole('region', { name: 'Historial de mediciones' })).toBeNull();
+  const toggle = screen.getByRole('button', { name: 'Ver historial' });
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('region', { name: 'Historial de mediciones' })).toBeTruthy();
+  fireEvent.input(screen.getByLabelText('Historial desde'), { target: { value: reading.reading_date } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar historial' }));
+  expect(screen.queryByRole('region', { name: 'Historial de mediciones' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Ver historial' }));
+  expect((screen.getByLabelText('Historial desde') as HTMLInputElement).value).toBe(reading.reading_date);
+  expect(screen.getByText('Operador de prueba')).toBeTruthy();
+  expect(rpc).toHaveBeenCalledTimes(1);
 });
